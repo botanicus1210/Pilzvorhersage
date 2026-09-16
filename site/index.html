@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pilzwachstum Österreich</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.js"></script>
+<style>
+  :root {
+    --bg:#0d1a0c; --surface:#131f12; --border:#243522; --text:#cfe0c8;
+    --muted:#6b8f63; --accent:#6fcf3a; --accent2:#e0b84a; --danger:#e05c3a;
+    --panel:270px; --r:5px;
+    --font-ui:'Inter',system-ui,sans-serif; --font-mono:'JetBrains Mono','Fira Mono',monospace;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font-ui);overflow:hidden}
+  #app{display:flex;height:100vh}
+  #map{flex:1}
+  #panel{width:var(--panel);background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+
+  #ph{padding:13px 14px 10px;border-bottom:1px solid var(--border)}
+  #ph h1{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:5px}
+  #gen{font-size:10px;color:var(--muted);margin-top:3px;font-family:var(--font-mono)}
+
+  #ctrl{padding:12px 14px;border-bottom:1px solid var(--border)}
+  .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:5px}
+  #sptabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px}
+  .spt{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s}
+  .spt:hover{border-color:var(--accent);color:var(--text)}
+  .spt.active{background:var(--accent);border-color:var(--accent);color:#0d1a0c}
+  .spt.noseas{opacity:.4}
+  .spt.noseas::after{content:' ✕';font-size:9px}
+
+  /* view toggle */
+  #vtoggle{display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:20px;overflow:hidden;width:fit-content}
+  .vbtn{padding:4px 12px;font-size:11px;font-weight:500;background:transparent;color:var(--muted);cursor:pointer;border:none}
+  .vbtn.active{background:var(--accent);color:#0d1a0c}
+
+  #wrow,#orow{display:flex;align-items:center;gap:8px}
+  #wslide,#oslide{flex:1;-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;background:linear-gradient(to right,var(--accent) var(--pct,47%),var(--border) var(--pct,47%));outline:none;cursor:pointer}
+  #wslide::-webkit-slider-thumb,#oslide::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(111,207,58,.18)}
+  #wval,#oval{font-family:var(--font-mono);font-size:11px;color:var(--accent);min-width:38px;text-align:right}
+
+  #leg{padding:11px 14px;border-bottom:1px solid var(--border)}
+  #legbar{height:7px;border-radius:4px;margin:5px 0 3px;background:linear-gradient(to right,#1a3a14 0%,#2d6020 20%,#4a9930 40%,#6fcf3a 60%,#b8e030 80%,#f0d030 100%)}
+  #leglbl{display:flex;justify-content:space-between;font-size:9px;font-family:var(--font-mono);color:var(--muted)}
+
+  #det{flex:1;overflow-y:auto;padding:12px 14px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+  #dethint{color:var(--muted);font-size:12px;line-height:1.6}
+  #dethint span{display:block;margin-top:5px;font-size:10px}
+  .dcoord{font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-bottom:12px}
+  .ibig{display:flex;align-items:baseline;gap:3px;margin-bottom:3px}
+  .inum{font-size:44px;font-weight:700;line-height:1;font-family:var(--font-mono)}
+  .iunit{font-size:13px;color:var(--muted)}
+  .ilbl{font-size:11px;color:var(--muted);margin-bottom:12px}
+  .ttitle{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:7px}
+  .tr{margin-bottom:6px}
+  .th{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:2px}
+  .th .tv{font-family:var(--font-mono);color:var(--text)}
+  .tk{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+  .tf{height:100%;border-radius:2px;transition:width .3s ease}
+  .spsec+.spsec{border-top:1px solid var(--border);padding-top:12px;margin-top:10px}
+  .spn{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--accent2);margin-bottom:7px}
+  .rgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:9px}
+  .rc{background:rgba(0,0,0,.3);border-radius:var(--r);padding:5px 7px}
+  .rl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .rv{font-family:var(--font-mono);font-size:12px;color:var(--text)}
+  #det::-webkit-scrollbar{width:3px}
+  #det::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+  .leaflet-container{background:#0a120a!important}
+  .leaflet-control-layers{background:var(--surface)!important;border:1px solid var(--border)!important;border-radius:var(--r)!important;color:var(--text)!important}
+  .leaflet-control-layers-toggle{background-color:var(--surface)!important}
+  .leaflet-control-layers-expanded{padding:8px 10px!important;font-size:12px!important}
+  .leaflet-control-layers label{margin:2px 0!important}
+  .leaflet-control-attribution{font-size:9px!important}
+  .pztt .leaflet-popup-content-wrapper{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 4px 16px rgba(0,0,0,.6);font-size:11px;padding:0}
+  .pztt .leaflet-popup-content{margin:8px 10px}
+
+  #load{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:9999;transition:opacity .4s}
+  #load.gone{opacity:0;pointer-events:none}
+  .ring{width:32px;height:32px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #load p{font-size:11px;color:var(--muted)}
+
+  @media(max-width:600px){
+    html,body{overflow:auto}
+    #app{flex-direction:column;height:auto;min-height:100vh}
+    #map{height:52vh;flex:none}
+    #panel{width:100%;height:auto;border-left:none;border-top:1px solid var(--border);overflow:visible}
+    #det{overflow:visible;flex:none}
+  }
+</style>
+</head>
+<body>
+
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v7</span></p></div>
+
+<div id="app">
+  <div id="map"></div>
+  <div id="panel">
+    <div id="ph">
+      <h1>
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <path d="M7 2C4.5 2 2.5 3.8 2.5 6c0 1.5.8 2.8 2 3.5V11h5V9.5c1.2-.7 2-2 2-3.5C11.5 3.8 9.5 2 7 2z" fill="var(--accent)" opacity=".9"/>
+          <rect x="5.5" y="11" width="3" height="1.5" rx=".75" fill="var(--muted)"/>
+        </svg>
+        Pilzwachstum AT
+      </h1>
+      <div id="gen">–</div>
+    </div>
+
+    <div id="ctrl">
+      <div class="lbl">Art</div>
+      <div id="sptabs"></div>
+
+      <div class="lbl">Ansicht</div>
+      <div id="vtoggle">
+        <button class="vbtn active" data-v="points">Punkte</button>
+        <button class="vbtn" data-v="heat">Heatmap</button>
+      </div>
+
+      <div class="lbl">Prognose</div>
+      <div id="wrow">
+        <input type="range" id="wslide" min="0" max="21" value="0" step="1">
+        <span id="wval">heute</span>
+      </div>
+    </div>
+
+    <div id="leg">
+      <div class="lbl">Wachstumsindex</div>
+      <div id="legbar"></div>
+      <div id="leglbl"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+      <div class="lbl" style="margin-top:11px">Deckkraft</div>
+      <div id="orow">
+        <input type="range" id="oslide" min="10" max="100" value="30" step="5">
+        <span id="oval">30%</span>
+      </div>
+    </div>
+
+    <div id="det">
+      <div id="dethint">Zelle anklicken für Details.
+        <span>5×5 km · nur Waldzellen · GeoSphere INCA · Prognose = Fruchtkörper-Reifezeit nach Regen</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const GEOJSON='pilzwachstum.geojson';
+
+// Modell-Parameter je Art (Frontend rechnet live).
+//  lag/lagW: Fruchtkörper erscheinen ~lag Tage nach dem Regen (Reifezeit).
+//  forest: passende CORINE-Waldtypen (311 Laub,312 Nadel,313 Misch,324 Übergang).
+const SPMODEL = {
+  steinpilz:       {label:'Herbststeinpilz', emoji:'🟤', dS:196,dE:315, t_opt:15.0,t_sig:5.0, lag:14,lagW:6, rRef:28, forest:['311','312','313']},
+  sommersteinpilz: {label:'Sommersteinpilz', emoji:'🟫', dS:150,dE:270, t_opt:17.5,t_sig:5.5, lag:14,lagW:6, rRef:26, forest:['311','313']},
+  eierschwammerl:  {label:'Eierschwammerl',  emoji:'🟡', dS:152,dE:300, t_opt:17.0,t_sig:6.0, lag:12,lagW:5, rRef:30, forest:['311','312','313']},
+  herbsttrompete:  {label:'Herbsttrompete',  emoji:'⚫', dS:220,dE:325, t_opt:13.5,t_sig:5.0, lag:14,lagW:6, rRef:30, forest:['311','313']},
+  morchel:         {label:'Morchel',         emoji:'🍄', dS:74, dE:150, t_opt:12.0,t_sig:4.5, lag:10,lagW:5, rRef:24, forest:['311','313','324']},
+  parasol:         {label:'Parasol',          emoji:'⚪', dS:210,dE:315, t_opt:16.0,t_sig:6.0, lag:12,lagW:5, rRef:26, forest:['311','312','313','324']},
+};
+const TLABELS={f_rain:'Niederschlag (Lag)',f_temp:'Temperatur',f_season:'Saison',f_cover:'Datenabdeckung'};
+
+let state={sp:'eierschwammerl', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, view:'points'};
+
+// ── Modell ────────────────────────────────────────────────
+function logistic(x){return x<-60?0:x>60?1:1/(1+Math.exp(-x));}
+function seasonF(doy,s){return logistic((doy-s.dS)/6)*logistic((s.dE-doy)/6);}
+// Lag-gewichteter Regen für Prognose-Horizont h. Treiber liegt um (lag-h) Tage zurück.
+function lagged(arr,s,h){
+  const n=arr.length, center=s.lag-h; let num=0,wsum=0,peak=0;
+  for(let i=0;i<n;i++){
+    const age=n-i;                 // arr[-1]=gestern -> age 1
+    if(age<3) continue;            // letzte ~3 Tage: noch nicht reif
+    const w=Math.exp(-((age-center)**2)/(2*s.lagW**2));
+    num+=(arr[i]||0)*w; wsum+=w; if(w>peak)peak=w;
+  }
+  return {val: wsum>0?num/wsum : 0, cover:peak};
+}
+function speciesAllowed(props,key){
+  const fc=props.forest; if(!fc) return true;
+  const cell=fc.split(','), aff=SPMODEL[key].forest;
+  return aff.some(c=>cell.includes(c));
+}
+function growthIndex(props,key,h){
+  const s=SPMODEL[key];
+  const lr=lagged(props.rain,s,h);
+  const rain14=lr.val*14;                          // ~14-Tage-Äquivalent
+  const f_rain=Math.tanh(rain14/s.rRef);
+  const lt=lagged(props.t,s,h);
+  const tm=lt.cover>0?lt.val:15;
+  const f_temp=Math.exp(-((tm-s.t_opt)**2)/(2*s.t_sig**2));
+  const f_season=seasonF(state.refDoy+1+h,s);
+  const f_cover=Math.min(1,lr.cover/0.6);          // liegt Treiberfenster in den Daten?
+  const idx=Math.max(0,Math.min(1,f_season*f_rain*f_temp*f_cover));
+  return {index:Math.round(idx*100),f_rain,f_temp,f_season,f_cover,rain:rain14,tm};
+}
+
+// ── Map + Esri Basemaps (kein Key) ────────────────────────
+const map=L.map('map',{center:[47.5,13.5],zoom:7,zoomControl:true});
+const ESRI='https://services.arcgisonline.com/arcgis/rest/services/';
+const A_ESRI='Tiles © <a href="https://www.esri.com/">Esri</a> · GeoSphere INCA CC BY 4.0';
+function esri(p){return L.tileLayer(ESRI+p+'/MapServer/tile/{z}/{y}/{x}',{attribution:A_ESRI,maxNativeZoom:16,maxZoom:18});}
+const hell=L.layerGroup([esri('Canvas/World_Light_Gray_Base'),esri('Canvas/World_Light_Gray_Reference')]);
+const dunkel=L.layerGroup([esri('Canvas/World_Dark_Gray_Base'),esri('Canvas/World_Dark_Gray_Reference')]);
+const gelaende=esri('World_Topo_Map');
+hell.addTo(map);
+L.control.layers({'Hell':hell,'Dunkel':dunkel,'Gelände':gelaende},null,{position:'topright',collapsed:true}).addTo(map);
+
+// ── Ortssuche (optional) ──────────────────────────────────
+try{ if(L.Control&&L.Control.Geocoder){
+  L.Control.geocoder({defaultMarkGeocode:true,placeholder:'Ort suchen…',errorMessage:'Nicht gefunden',
+    geocoder:L.Control.Geocoder.nominatim({geocodingQueryParams:{countrycodes:'at',limit:6}})})
+    .on('markgeocode',e=>map.setView(e.geocode.center,12)).addTo(map);
+}}catch(err){console.warn('Ortssuche n/a',err);}
+
+// ── Farbrampe ─────────────────────────────────────────────
+const RAMP=[[0,[20,50,16]],[15,[30,80,22]],[35,[50,130,32]],[55,[90,190,40]],[75,[175,220,40]],[100,[240,208,40]]];
+function idxCol(idx,a){
+  let lo=RAMP[0],hi=RAMP[RAMP.length-1];
+  for(let i=0;i<RAMP.length-1;i++){if(idx>=RAMP[i][0]&&idx<=RAMP[i+1][0]){lo=RAMP[i];hi=RAMP[i+1];break}}
+  const t=(idx-lo[0])/Math.max(1,hi[0]-lo[0]);
+  return `rgba(${Math.round(lo[1][0]+t*(hi[1][0]-lo[1][0]))},${Math.round(lo[1][1]+t*(hi[1][1]-lo[1][1]))},${Math.round(lo[1][2]+t*(hi[1][2]-lo[1][2]))},${a})`;
+}
+
+// ── Zeichnen ──────────────────────────────────────────────
+function clearLayers(){state.layers.forEach(l=>map.removeLayer(l));state.layers=[];}
+function draw(){
+  clearLayers(); if(!state.data) return;
+  if(state.view==='heat') return drawHeat();
+  const z=map.getZoom(), r=Math.max(2.5,Math.min(9,(z-5)*1.5+3));
+  state.data.features.forEach(f=>{
+    const p=f.properties; if(!speciesAllowed(p,state.sp)) return;
+    const idx=growthIndex(p,state.sp,state.hz).index;
+    const fillA=(idx<5?0.12:0.18+(idx/100)*0.72)*state.dotOp;
+    const m=L.circleMarker([f.geometry.coordinates[1],f.geometry.coordinates[0]],
+      {radius:r,fillColor:idxCol(idx,fillA),fillOpacity:1,color:idxCol(idx,Math.min(1,fillA+0.15)),weight:0.8,interactive:true});
+    m.on('click',()=>detail(f));
+    m.bindTooltip(`<b>${SPMODEL[state.sp].label}</b> · Index <b>${idx}</b>`,{className:'pztt',sticky:true,offset:[6,0]});
+    m.addTo(map); state.layers.push(m);
+  });
+}
+function drawHeat(){
+  const km=(state.data.metadata&&state.data.metadata.grid_km)||5, hLat=(km/2)/111, op=Math.min(1,state.dotOp+0.4);
+  state.data.features.forEach(f=>{
+    const p=f.properties; if(!speciesAllowed(p,state.sp)) return;
+    const idx=growthIndex(p,state.sp,state.hz).index;
+    const [lon,lat]=f.geometry.coordinates, hLon=(km/2)/(111*Math.cos(lat*Math.PI/180));
+    const rect=L.rectangle([[lat-hLat,lon-hLon],[lat+hLat,lon+hLon]],
+      {stroke:false,fill:true,fillColor:idxCol(idx,1),fillOpacity:op,interactive:true});
+    rect.on('click',()=>detail(f));
+    rect.addTo(map); state.layers.push(rect);
+  });
+}
+map.on('zoomend',()=>{if(state.view==='points')draw();});
+
+// ── Detail ────────────────────────────────────────────────
+function termBar(k,v,col){const p=Math.round(v*100);
+  return `<div class="tr"><div class="th"><span>${TLABELS[k]||k}</span><span class="tv">${p}%</span></div><div class="tk"><div class="tf" style="width:${p}%;background:${col}"></div></div></div>`;}
+function hzLabel(){return state.hz===0?'heute':'in '+state.hz+' Tagen';}
+function detail(f){
+  const [lon,lat]=f.geometry.coordinates, p=f.properties;
+  let h=`<div class="dcoord">${lat.toFixed(4)}° N &nbsp;${lon.toFixed(4)}° E</div>`;
+  Object.keys(SPMODEL).forEach(k=>{
+    if(!speciesAllowed(p,k)) return;
+    const res=growthIndex(p,k,state.hz), col=idxCol(res.index,1), cur=k===state.sp;
+    h+=`<div class="spsec" style="${cur?'':'opacity:.5'}">`;
+    h+=`<div class="spn">${SPMODEL[k].emoji} ${SPMODEL[k].label}</div>`;
+    h+=`<div class="ibig"><span class="inum" style="color:${col}">${res.index}</span><span class="iunit">/ 100</span></div>`;
+    h+=`<div class="ilbl">Prognose · ${hzLabel()}</div><div class="ttitle">Einflussfaktoren</div>`;
+    ['f_rain','f_temp','f_season','f_cover'].forEach(key=>h+=termBar(key,res[key],col));
+    h+=`<div class="rgrid"><div class="rc"><div class="rl">Regen (Lag)</div><div class="rv">${res.rain.toFixed(0)} mm</div></div>`;
+    h+=`<div class="rc"><div class="rl">Temp. (Lag)</div><div class="rv">${res.tm.toFixed(0)} °C</div></div></div></div>`;
+  });
+  document.getElementById('det').innerHTML=h;
+}
+
+// ── Arten-Tabs ────────────────────────────────────────────
+function buildTabs(){
+  const today=state.refDoy+1, c=document.getElementById('sptabs'); c.innerHTML='';
+  Object.entries(SPMODEL).forEach(([k,m])=>{
+    const inS=today>=m.dS&&today<=m.dE;
+    const b=document.createElement('button');
+    b.className='spt'+(k===state.sp?' active':'')+(inS?'':' noseas');
+    b.textContent=m.label; b.title=inS?'':'Außerhalb der Hauptsaison';
+    b.onclick=()=>{state.sp=k;document.querySelectorAll('.spt').forEach(x=>x.classList.remove('active'));b.classList.add('active');draw()};
+    c.appendChild(b);
+  });
+}
+
+// ── Ansicht-Umschalter ────────────────────────────────────
+document.querySelectorAll('.vbtn').forEach(b=>{b.onclick=()=>{
+  state.view=b.dataset.v;
+  document.querySelectorAll('.vbtn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); draw();};});
+
+// ── Slider: Prognose-Horizont ─────────────────────────────
+const sl=document.getElementById('wslide'),wv=document.getElementById('wval');
+function setHz(v){state.hz=v; wv.textContent=v===0?'heute':'+'+v+' T';
+  sl.style.setProperty('--pct',(v/21*100).toFixed(1)+'%'); wv.style.color=v!==0?'var(--accent2)':'var(--accent)';}
+sl.addEventListener('input',e=>{setHz(+e.target.value);draw();}); setHz(0);
+
+// ── Slider: Deckkraft ─────────────────────────────────────
+const ol=document.getElementById('oslide'),ov=document.getElementById('oval');
+function setOp(v){state.dotOp=v/100;ov.textContent=v+'%';ol.style.setProperty('--pct',((v-10)/90*100).toFixed(1)+'%');}
+ol.addEventListener('input',e=>{setOp(+e.target.value);draw();}); setOp(30);
+
+// ── Laden ─────────────────────────────────────────────────
+const loadEl=document.getElementById('load');
+const killTimer=setTimeout(()=>{if(!loadEl.classList.contains('gone'))
+  loadEl.innerHTML='<p style="color:var(--danger)">Zeitüberschreitung beim Laden</p><p style="color:var(--muted);font-size:10px;margin-top:6px;">pilzwachstum.geojson erreichbar?</p>';},25000);
+fetch(GEOJSON,{cache:'no-store'})
+  .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
+  .then(d=>{
+    clearTimeout(killTimer); state.data=d;
+    const m=d.metadata||{};
+    if(typeof m.ref_doy==='number') state.refDoy=m.ref_doy;
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v7';
+    buildTabs(); draw(); loadEl.classList.add('gone');
+  })
+  .catch(e=>{clearTimeout(killTimer);
+    loadEl.innerHTML=`<p style="color:var(--danger)">Fehler: ${e.message}</p><p style="color:var(--muted);font-size:10px;margin-top:6px;">pilzwachstum.geojson erreichbar?</p>`;});
+
+</script>
+</body>
+</html>
