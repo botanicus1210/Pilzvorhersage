@@ -1,0 +1,56 @@
+# .github/workflows/update.yml
+# Erzeugt taeglich frische Pilzwachstums-Daten und veroeffentlicht die Karte
+# auf GitHub Pages. Kein eigener Server noetig.
+name: Pilzkarte aktualisieren
+
+on:
+  schedule:
+    - cron: "0 6 * * *"      # taeglich 06:00 UTC (~08:00 CET/CEST)
+  workflow_dispatch: {}       # erlaubt manuelles Starten im Actions-Tab
+  push:
+    branches: [ main ]        # bei jedem Push auch neu bauen
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Daten erzeugen (INCA -> GeoJSON)
+        env:
+          PILZ_OUTPUT: site/pilzwachstum.geojson   # Ausgabe in den Webordner
+          PILZ_MASK: pilz_forest_mask.json          # vorgebaute Wald-Maske aus dem Repo
+        run: |
+          mkdir -p site
+          python pilzwachstum.py --run
+          ls -lh site/
+
+      - name: Pages konfigurieren
+        uses: actions/configure-pages@v5
+
+      - name: Webordner als Artefakt packen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Auf GitHub Pages veroeffentlichen
+        id: deploy
+        uses: actions/deploy-pages@v4
