@@ -97,7 +97,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v9</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v10</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -122,6 +122,7 @@
         <button class="vbtn active" data-v="points">Punkte</button>
         <button class="vbtn" data-v="heat">Heatmap</button>
       </div>
+      <div id="fundeToggle" class="vbtn" style="border:1px solid var(--border);border-radius:20px;display:inline-block;margin-bottom:12px">🍄 Funde aus</div>
 
       <div class="lbl">Prognose</div>
       <div id="wrow">
@@ -165,7 +166,12 @@ const SPMODEL = {
 };
 const TLABELS={f_moist:'Bodenfeuchte (Modell)',f_temp:'Temperatur',f_season:'Saison',f_cover:'Datenabdeckung'};
 
-let state={sp:'eierschwammerl', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, view:'points'};
+let state={sp:'eierschwammerl', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, view:'points', funde:null, showFunde:false, fundeLayers:[]};
+
+// Welche Art gehoert zu welcher Fund-Gilde
+const SP_GUILD={steinpilz:'mykorrhiza_wald', sommersteinpilz:'mykorrhiza_wald',
+  eierschwammerl:'feucht_mykorrhiza', herbsttrompete:'feucht_mykorrhiza',
+  morchel:'fruehling_au', parasol:'wiese_saprob'};
 
 // ── Modell ────────────────────────────────────────────────
 function logistic(x){return x<-60?0:x>60?1:1/(1+Math.exp(-x));}
@@ -235,8 +241,11 @@ function idxCol(idx,a){
 // ── Zeichnen ──────────────────────────────────────────────
 function clearLayers(){state.layers.forEach(l=>map.removeLayer(l));state.layers=[];}
 function draw(){
-  clearLayers(); if(!state.data) return;
-  if(state.view==='heat') return drawHeat();
+  clearLayers(); if(!state.data){drawFunde();return;}
+  if(state.view==='heat') drawHeat(); else drawPoints();
+  drawFunde();                       // Overlay folgt der gewaehlten Art
+}
+function drawPoints(){
   const z=map.getZoom(), r=Math.max(2.5,Math.min(9,(z-5)*1.5+3));
   state.data.features.forEach(f=>{
     const p=f.properties; if(!speciesAllowed(p,state.sp)) return;
@@ -262,6 +271,39 @@ function drawHeat(){
   });
 }
 map.on('zoomend',()=>{if(state.view==='points')draw();});
+
+// ── Fund-Overlay (Stufe 2: Gilden-Funde der aktuellen Art) ─
+function ageColor(d){
+  if(d==null) return '#888';
+  if(d<=4)  return '#ff3b6b';   // ganz frisch
+  if(d<=9)  return '#ff8c1a';
+  if(d<=14) return '#e0b84a';
+  return '#9a9a9a';             // aelter
+}
+function clearFunde(){state.fundeLayers.forEach(l=>map.removeLayer(l));state.fundeLayers=[];}
+function drawFunde(){
+  clearFunde();
+  if(!state.showFunde||!state.funde) return;
+  const guild=SP_GUILD[state.sp];
+  state.funde.features.forEach(f=>{
+    if(f.properties.guild!==guild) return;
+    const d=f.properties.days_ago;
+    const m=L.circleMarker([f.geometry.coordinates[1],f.geometry.coordinates[0]],
+      {radius:6,fillColor:ageColor(d),fillOpacity:0.95,color:'#fff',weight:1.5,interactive:true});
+    m.bindTooltip(`<b>${f.properties.name}</b><br>${f.properties.sci||''}<br>Fund ${d==null?'':'vor '+d+' Tagen'} (${f.properties.date})`,
+      {className:'pztt',sticky:true,offset:[6,0]});
+    m.addTo(map); state.fundeLayers.push(m);
+  });
+}
+document.getElementById('fundeToggle').onclick=function(){
+  state.showFunde=!state.showFunde;
+  this.classList.toggle('active',state.showFunde);
+  this.textContent=state.showFunde?'🍄 Funde an':'🍄 Funde aus';
+  if(state.showFunde&&!state.funde){
+    fetch('funde.geojson',{cache:'no-store'}).then(r=>r.ok?r.json():null)
+      .then(d=>{state.funde=d; drawFunde();}).catch(()=>{});
+  } else drawFunde();
+};
 
 // ── Detail ────────────────────────────────────────────────
 function termBar(k,v,col){const p=Math.round(v*100);
@@ -331,7 +373,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v9';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v10';
     buildTabs(); draw(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
