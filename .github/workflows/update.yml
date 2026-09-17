@@ -43,6 +43,14 @@ jobs:
           python pilzwachstum.py --run
           ls -lh site/
 
+      - name: Fundmeldungen holen (iNaturalist)
+        env:
+          PILZ_FUNDE: site/funde.geojson
+        continue-on-error: true       # Funde sind optional - Karte laeuft auch ohne
+        run: |
+          python funde.py --run
+          ls -lh site/ || true
+
       - name: Pages konfigurieren
         uses: actions/configure-pages@v5
 
