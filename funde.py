@@ -71,6 +71,29 @@ def _get(url):
         return json.loads(r.read().decode("utf-8"))
 
 
+def _resolve_one(name):
+    """Exakter Namensabgleich statt 'erstes Ergebnis' (sonst matcht z.B.
+    Boletus faelschlich auf Trametes versicolor). Bevorzugt aktive Taxa und
+    den passenden Rang (ein Wort -> Gattung, zwei Woerter -> Art)."""
+    data = _get(f"{INAT}/taxa?" + parse.urlencode(
+        {"q": name, "per_page": 20, "is_active": "true"}))
+    res = data.get("results", [])
+    if not res:
+        return None
+    ql = name.strip().lower()
+    want_rank = "species" if " " in name.strip() else "genus"
+    # 1) exakter wissenschaftlicher Name + passender Rang
+    for r in res:
+        if r.get("name", "").lower() == ql and r.get("rank") == want_rank:
+            return r
+    # 2) exakter Name, egal welcher Rang
+    for r in res:
+        if r.get("name", "").lower() == ql:
+            return r
+    # 3) kein exakter Treffer -> nichts (lieber weglassen als falsch)
+    return None
+
+
 def resolve_taxa():
     """Namen -> {taxon_id: guild}. Ein Name kann Gattung (viele Arten) sein."""
     id2guild = {}
@@ -81,16 +104,15 @@ def resolve_taxa():
                 id2guild.setdefault(name2id[name], guild)
                 continue
             try:
-                url = f"{INAT}/taxa?" + parse.urlencode({"q": name, "per_page": 1})
-                data = _get(url)
-                res = data.get("results", [])
-                if not res:
-                    print(f"[funde] kein Taxon fuer '{name}'", file=sys.stderr)
+                r = _resolve_one(name)
+                if not r:
+                    print(f"[funde] kein exakter Treffer fuer '{name}' - uebersprungen",
+                          file=sys.stderr)
                     continue
-                tid = res[0]["id"]
+                tid = r["id"]
                 name2id[name] = tid
                 id2guild[tid] = guild
-                print(f"[funde] {name:22s} -> id {tid} ({res[0].get('name')})")
+                print(f"[funde] {name:22s} -> id {tid} ({r.get('name')}, {r.get('rank')})")
             except Exception as e:
                 print(f"[funde] Aufloesung '{name}' fehlgeschlagen: {e}", file=sys.stderr)
             time.sleep(0.3)
