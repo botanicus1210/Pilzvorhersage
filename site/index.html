@@ -97,7 +97,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v7</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v9</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -143,7 +143,7 @@
 
     <div id="det">
       <div id="dethint">Zelle anklicken für Details.
-        <span>5×5 km · nur Waldzellen · GeoSphere INCA · Prognose = Fruchtkörper-Reifezeit nach Regen</span>
+        <span>5×5 km · nur Waldzellen · GeoSphere INCA · Prognose = Reifezeit nach Feuchte (API-Bodenfeuchtemodell)</span>
       </div>
     </div>
   </div>
@@ -156,30 +156,34 @@ const GEOJSON='pilzwachstum.geojson';
 //  lag/lagW: Fruchtkörper erscheinen ~lag Tage nach dem Regen (Reifezeit).
 //  forest: passende CORINE-Waldtypen (311 Laub,312 Nadel,313 Misch,324 Übergang).
 const SPMODEL = {
-  steinpilz:       {label:'Herbststeinpilz', emoji:'🟤', dS:196,dE:315, t_opt:15.0,t_sig:5.0, lag:14,lagW:6, rRef:28, forest:['311','312','313']},
-  sommersteinpilz: {label:'Sommersteinpilz', emoji:'🟫', dS:150,dE:270, t_opt:17.5,t_sig:5.5, lag:14,lagW:6, rRef:26, forest:['311','313']},
-  eierschwammerl:  {label:'Eierschwammerl',  emoji:'🟡', dS:152,dE:300, t_opt:17.0,t_sig:6.0, lag:12,lagW:5, rRef:30, forest:['311','312','313']},
-  herbsttrompete:  {label:'Herbsttrompete',  emoji:'⚫', dS:220,dE:325, t_opt:13.5,t_sig:5.0, lag:14,lagW:6, rRef:30, forest:['311','313']},
-  morchel:         {label:'Morchel',         emoji:'🍄', dS:74, dE:150, t_opt:12.0,t_sig:4.5, lag:10,lagW:5, rRef:24, forest:['311','313','324']},
-  parasol:         {label:'Parasol',          emoji:'⚪', dS:210,dE:315, t_opt:16.0,t_sig:6.0, lag:12,lagW:5, rRef:26, forest:['311','312','313','324']},
+  steinpilz:       {label:'Herbststeinpilz', emoji:'🟤', dS:196,dE:315, t_opt:15.0,t_sig:5.0, lag:14,lagW:6, k:0.91,apiRef:40, forest:['311','312','313']},
+  sommersteinpilz: {label:'Sommersteinpilz', emoji:'🟫', dS:150,dE:270, t_opt:17.5,t_sig:5.5, lag:14,lagW:6, k:0.88,apiRef:40, forest:['311','313']},
+  eierschwammerl:  {label:'Eierschwammerl',  emoji:'🟡', dS:152,dE:300, t_opt:17.0,t_sig:6.0, lag:12,lagW:5, k:0.89,apiRef:42, forest:['311','312','313']},
+  herbsttrompete:  {label:'Herbsttrompete',  emoji:'⚫', dS:220,dE:325, t_opt:13.5,t_sig:5.0, lag:14,lagW:6, k:0.91,apiRef:40, forest:['311','313']},
+  morchel:         {label:'Morchel',         emoji:'🍄', dS:74, dE:150, t_opt:12.0,t_sig:4.5, lag:10,lagW:5, k:0.90,apiRef:36, forest:['311','313','324']},
+  parasol:         {label:'Parasol',          emoji:'⚪', dS:210,dE:315, t_opt:16.0,t_sig:6.0, lag:12,lagW:5, k:0.90,apiRef:40, forest:['311','312','313','324']},
 };
-const TLABELS={f_rain:'Niederschlag (Lag)',f_temp:'Temperatur',f_season:'Saison',f_cover:'Datenabdeckung'};
+const TLABELS={f_moist:'Bodenfeuchte (Modell)',f_temp:'Temperatur',f_season:'Saison',f_cover:'Datenabdeckung'};
 
 let state={sp:'eierschwammerl', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, view:'points'};
 
 // ── Modell ────────────────────────────────────────────────
 function logistic(x){return x<-60?0:x>60?1:1/(1+Math.exp(-x));}
 function seasonF(doy,s){return logistic((doy-s.dS)/6)*logistic((s.dE-doy)/6);}
-// Lag-gewichteter Regen für Prognose-Horizont h. Treiber liegt um (lag-h) Tage zurück.
-function lagged(arr,s,h){
-  const n=arr.length, center=s.lag-h; let num=0,wsum=0,peak=0;
+// Antecedent Precipitation Index = Bodenfeuchte-Proxy aus Tagesregen.
+//   api[i] = k*api[i-1] + rain[i]   (k = tägliche Rückhaltung; Rest = Drainage+Verdunstung)
+// Unterscheidet Starkregen (spikt, klingt ab) von durchgehender Feuchte (Plateau)
+// und lässt bei Trockenphasen den Index absinken.
+function computeAPI(rain,k){const a=new Array(rain.length);let p=0;for(let i=0;i<rain.length;i++){p=k*p+(rain[i]||0);a[i]=p;}return a;}
+// Lag-gewichteter Mittelwert; Treiber liegt um (lag-h) Tage zurück (Reifezeit).
+function laggedMean(arr,s,h){
+  const n=arr.length, center=s.lag-h; let num=0,w=0,peak=0;
   for(let i=0;i<n;i++){
-    const age=n-i;                 // arr[-1]=gestern -> age 1
-    if(age<3) continue;            // letzte ~3 Tage: noch nicht reif
-    const w=Math.exp(-((age-center)**2)/(2*s.lagW**2));
-    num+=(arr[i]||0)*w; wsum+=w; if(w>peak)peak=w;
+    const age=n-i;                       // arr[-1]=gestern -> age 1
+    const ww=Math.exp(-((age-center)**2)/(2*s.lagW**2));
+    num+=(arr[i]||0)*ww; w+=ww; if(ww>peak)peak=ww;
   }
-  return {val: wsum>0?num/wsum : 0, cover:peak};
+  return {val:w>0?num/w:0, cover:peak};
 }
 function speciesAllowed(props,key){
   const fc=props.forest; if(!fc) return true;
@@ -188,16 +192,17 @@ function speciesAllowed(props,key){
 }
 function growthIndex(props,key,h){
   const s=SPMODEL[key];
-  const lr=lagged(props.rain,s,h);
-  const rain14=lr.val*14;                          // ~14-Tage-Äquivalent
-  const f_rain=Math.tanh(rain14/s.rRef);
-  const lt=lagged(props.t,s,h);
+  // API pro Zelle+k einmal cachen (unabhängig vom Horizont) -> Slider bleibt flüssig
+  if(!props._api||props._apiK!==s.k){props._api=computeAPI(props.rain,s.k);props._apiK=s.k;}
+  const lm=laggedMean(props._api,s,h);
+  const f_moist=Math.tanh(lm.val/s.apiRef);
+  const lt=laggedMean(props.t,s,h);
   const tm=lt.cover>0?lt.val:15;
   const f_temp=Math.exp(-((tm-s.t_opt)**2)/(2*s.t_sig**2));
   const f_season=seasonF(state.refDoy+1+h,s);
-  const f_cover=Math.min(1,lr.cover/0.6);          // liegt Treiberfenster in den Daten?
-  const idx=Math.max(0,Math.min(1,f_season*f_rain*f_temp*f_cover));
-  return {index:Math.round(idx*100),f_rain,f_temp,f_season,f_cover,rain:rain14,tm};
+  const f_cover=Math.min(1,lm.cover/0.6);            // liegt Treiberfenster in den Daten?
+  const idx=Math.max(0,Math.min(1,f_season*f_moist*f_temp*f_cover));
+  return {index:Math.round(idx*100),f_moist,f_temp,f_season,f_cover,api:lm.val,tm};
 }
 
 // ── Map + Esri Basemaps (kein Key) ────────────────────────
@@ -272,8 +277,8 @@ function detail(f){
     h+=`<div class="spn">${SPMODEL[k].emoji} ${SPMODEL[k].label}</div>`;
     h+=`<div class="ibig"><span class="inum" style="color:${col}">${res.index}</span><span class="iunit">/ 100</span></div>`;
     h+=`<div class="ilbl">Prognose · ${hzLabel()}</div><div class="ttitle">Einflussfaktoren</div>`;
-    ['f_rain','f_temp','f_season','f_cover'].forEach(key=>h+=termBar(key,res[key],col));
-    h+=`<div class="rgrid"><div class="rc"><div class="rl">Regen (Lag)</div><div class="rv">${res.rain.toFixed(0)} mm</div></div>`;
+    ['f_moist','f_temp','f_season','f_cover'].forEach(key=>h+=termBar(key,res[key],col));
+    h+=`<div class="rgrid"><div class="rc"><div class="rl">Feuchte-Index</div><div class="rv">${res.api.toFixed(0)}</div></div>`;
     h+=`<div class="rc"><div class="rl">Temp. (Lag)</div><div class="rv">${res.tm.toFixed(0)} °C</div></div></div></div>`;
   });
   document.getElementById('det').innerHTML=h;
@@ -319,7 +324,14 @@ fetch(GEOJSON,{cache:'no-store'})
     clearTimeout(killTimer); state.data=d;
     const m=d.metadata||{};
     if(typeof m.ref_doy==='number') state.refDoy=m.ref_doy;
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v7';
+    // Format-Check: neues GeoJSON hat pro Zelle Regenreihen (rain[])
+    const f0=d.features&&d.features[0];
+    if(!f0||!f0.properties||!Array.isArray(f0.properties.rain)){
+      loadEl.innerHTML='<p style="color:var(--accent2)">Neues Datenformat noch nicht geschrieben</p>'+
+        '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
+      return;
+    }
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v9';
     buildTabs(); draw(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
