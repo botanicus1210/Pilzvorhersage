@@ -36,9 +36,9 @@
   .spt.noseas::after{content:' ✕';font-size:9px}
 
   /* view toggle */
-  #vtoggle{display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:20px;overflow:hidden;width:fit-content}
-  .vbtn{padding:4px 12px;font-size:11px;font-weight:500;background:transparent;color:var(--muted);cursor:pointer;border:none}
-  .vbtn.active{background:var(--accent);color:#0d1a0c}
+  #vtoggle,#ftoggle{display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:20px;overflow:hidden;width:fit-content}
+  .vbtn,.fbtn{padding:4px 12px;font-size:11px;font-weight:500;background:transparent;color:var(--muted);cursor:pointer;border:none}
+  .vbtn.active,.fbtn.active{background:var(--accent);color:#0d1a0c}
 
   #wrow,#orow{display:flex;align-items:center;gap:8px}
   #wslide,#oslide{flex:1;-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;background:linear-gradient(to right,var(--accent) var(--pct,47%),var(--border) var(--pct,47%));outline:none;cursor:pointer}
@@ -98,7 +98,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v11</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v12</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -123,7 +123,13 @@
         <button class="vbtn active" data-v="points">Punkte</button>
         <button class="vbtn" data-v="heat">Heatmap</button>
       </div>
-      <div id="fundeToggle" class="vbtn" style="border:1px solid var(--border);border-radius:20px;display:inline-block;margin-bottom:12px">🍄 Funde: aus</div>
+      <div class="lbl">Funde (iNaturalist)</div>
+      <div id="ftoggle">
+        <button class="fbtn active" data-f="off">Aus</button>
+        <button class="fbtn" data-f="markers">Marker</button>
+        <button class="fbtn" data-f="heat">Dichte</button>
+      </div>
+      <div id="fstatus" style="font-size:10px;color:var(--muted);margin:-6px 0 12px"></div>
 
       <div class="lbl">Prognose</div>
       <div id="wrow">
@@ -310,18 +316,33 @@ function drawFunde(){
     m.addTo(map); state.fundeLayers.push(m);
   });
 }
-const FUNDE_LABEL={off:'🍄 Funde: aus',markers:'🍄 Funde: Marker',heat:'🍄 Funde: Dichte'};
-document.getElementById('fundeToggle').onclick=function(){
-  state.fundeMode = state.fundeMode==='off'?'markers' : state.fundeMode==='markers'?'heat' : 'off';
-  this.classList.toggle('active',state.fundeMode!=='off');
-  this.textContent=FUNDE_LABEL[state.fundeMode];
-  if(state.fundeMode!=='off'&&!state.funde){
-    fetch('funde.geojson',{cache:'no-store'}).then(r=>r.ok?r.json():null)
-      .then(d=>{state.funde=d; drawFunde();
-        if(!d||!d.features||!d.features.length){this.textContent='🍄 Funde: keine';}
-      }).catch(()=>{this.textContent='🍄 Funde: n/a';});
-  } else drawFunde();
-};
+function fundeStatus(msg){document.getElementById('fstatus').textContent=msg||'';}
+function fundeCountForGuild(){
+  if(!state.funde||!state.funde.features) return 0;
+  const g=SP_GUILD[state.sp];
+  return state.funde.features.filter(f=>f.properties.guild===g).length;
+}
+function applyFunde(){
+  if(state.fundeMode==='off'){clearFunde();fundeStatus('');return;}
+  if(!state.funde){                                   // erst laden
+    fundeStatus('lädt …');
+    fetch('funde.geojson',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject())
+      .then(d=>{state.funde=d; drawFunde(); refreshFundeStatus();})
+      .catch(()=>fundeStatus('nicht geladen (funde.geojson fehlt)'));
+    return;
+  }
+  drawFunde(); refreshFundeStatus();
+}
+function refreshFundeStatus(){
+  if(state.fundeMode==='off'){fundeStatus('');return;}
+  const n=fundeCountForGuild();
+  fundeStatus(n?`${n} Funde (${SPMODEL[state.sp].label}-Gilde, 21 Tage)`:'keine Funde in dieser Gilde');
+}
+document.querySelectorAll('.fbtn').forEach(b=>{b.onclick=()=>{
+  state.fundeMode=b.dataset.f;
+  document.querySelectorAll('.fbtn').forEach(x=>x.classList.toggle('active',x===b));
+  applyFunde();
+};});
 
 // ── Detail ────────────────────────────────────────────────
 function termBar(k,v,col){const p=Math.round(v*100);
@@ -352,7 +373,7 @@ function buildTabs(){
     const b=document.createElement('button');
     b.className='spt'+(k===state.sp?' active':'')+(inS?'':' noseas');
     b.textContent=m.label; b.title=inS?'':'Außerhalb der Hauptsaison';
-    b.onclick=()=>{state.sp=k;document.querySelectorAll('.spt').forEach(x=>x.classList.remove('active'));b.classList.add('active');draw()};
+    b.onclick=()=>{state.sp=k;document.querySelectorAll('.spt').forEach(x=>x.classList.remove('active'));b.classList.add('active');draw();if(state.fundeMode!=='off')refreshFundeStatus();};
     c.appendChild(b);
   });
 }
@@ -391,7 +412,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v11';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v12';
     buildTabs(); draw(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
