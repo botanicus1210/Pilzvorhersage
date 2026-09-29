@@ -209,11 +209,19 @@ def fetch_inca(points, start, end):
                f"&start={start.strftime('%Y-%m-%dT00:00')}"
                f"&end={end.strftime('%Y-%m-%dT23:00')}"
                f"&output_format=geojson&{latlon}")
-        try:
-            data = _get_json(url)
-        except (error.URLError, error.HTTPError, ValueError) as e:
-            print(f"[INCA] Batch-Fehler: {e}", file=sys.stderr)
-            continue
+        data = None
+        for attempt in range(4):                    # Retries: 2s,4s,6s Backoff
+            try:
+                data = _get_json(url)
+                break
+            except Exception as e:                  # inkl. TimeoutError (OSError)
+                if attempt == 3:
+                    print(f"[INCA] Batch nach 4 Versuchen uebersprungen: {e}",
+                          file=sys.stderr)
+                else:
+                    time.sleep(2 * (attempt + 1))
+        if data is None:
+            continue                                # Batch auslassen statt abbrechen
         ts = data.get("timestamps", [])
         days = [t[:10] for t in ts]  # 'YYYY-MM-DD'
         feats = data.get("features", [])
