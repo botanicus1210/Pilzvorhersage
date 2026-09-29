@@ -32,25 +32,28 @@ UA = "Pilzkarte/1.0 (Home-Assistant Hobbyprojekt; kontakt via GitHub)"
 
 INAT = "https://api.inaturalist.org/v1"
 
-# Gilden: Gilde -> Liste iNat-Taxon-Namen (Gattung ODER Art).
-# iNat matcht bei einer Taxon-Abfrage automatisch alle Unterarten -> Gattungen
-# geben maximale Meldungsdichte.
+# Gilden: Gilde -> Liste iNat-Taxon-Namen (Familie, Gattung ODER Art).
+# iNat matcht alle Unterarten -> Familien geben maximale Meldungsdichte.
+# Bewusst NUR oekologisch gleichartige Taxa: fuer die Mykorrhiza-Gilden
+# ausschliesslich ektomykorrhizale Familien/Gattungen (reagieren auf dieselben
+# Regenschuebe wie der Steinpilz), keine Saprobe/Holzpilze.
 GUILDS = {
-    "mykorrhiza_wald": [   # Herbststeinpilz, Sommersteinpilz, Marone
-        "Boletus", "Imleria badia", "Amanita muscaria", "Amanita rubescens",
-        "Laccaria", "Russula", "Lactarius", "Cortinarius", "Leccinum",
-        "Xerocomellus", "Neoboletus", "Suillellus", "Paxillus involutus",
-        "Scleroderma", "Tylopilus felleus",
+    "mykorrhiza_wald": [   # Herbst-/Sommersteinpilz, Marone
+        # ektomykorrhizale Familien (grosse Dichte: Roehrlinge, Taeublinge,
+        # Wulstlinge inkl. Fliegenpilz, Schleierlinge)
+        "Boletaceae", "Russulaceae", "Amanitaceae", "Cortinariaceae",
+        # weitere ektomykorrhizale Gattungen
+        "Suillus", "Tricholoma", "Hygrophorus", "Laccaria", "Paxillus",
+        "Scleroderma", "Gomphidius", "Chroogomphus", "Hebeloma", "Inocybe",
     ],
     "feucht_mykorrhiza": [ # Eierschwammerl, Herbsttrompete
-        "Cantharellus", "Craterellus", "Hydnum", "Laccaria amethystina",
+        "Cantharellaceae", "Hydnaceae",   # Pfifferlinge/Trompeten, Stoppelpilze
     ],
     "fruehling_au": [      # Morchel
-        "Morchella", "Verpa", "Disciotis venosa",
+        "Morchellaceae", "Gyromitra",     # Morcheln/Verpeln/Becherlinge, Lorcheln
     ],
-    "wiese_saprob": [      # Parasol
-        "Macrolepiota", "Chlorophyllum", "Coprinus comatus",
-        "Marasmius oreades", "Agaricus", "Lycoperdon", "Bovista", "Calvatia",
+    "wiese_saprob": [      # Parasol (saprob, Wiese/Waldrand)
+        "Agaricaceae", "Marasmius oreades",  # Schirmlinge/Champignons/Boviste
     ],
 }
 
@@ -81,7 +84,15 @@ def _resolve_one(name):
     if not res:
         return None
     ql = name.strip().lower()
-    want_rank = "species" if " " in name.strip() else "genus"
+    n = name.strip()
+    if " " in n:
+        want_rank = "species"
+    elif n.endswith("aceae"):
+        want_rank = "family"
+    elif n.endswith("ales"):
+        want_rank = "order"
+    else:
+        want_rank = "genus"
     # 1) exakter wissenschaftlicher Name + passender Rang
     for r in res:
         if r.get("name", "").lower() == ql and r.get("rank") == want_rank:
