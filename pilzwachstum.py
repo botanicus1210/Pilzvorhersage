@@ -317,6 +317,9 @@ def fetch_forecast(points):
         time.sleep(REQUEST_PAUSE)
     return out
 
+
+def _param_array(props, name):
+    """Hole das data-Array zu einem Parameter, case-insensitiv."""
     for key in (name, name.lower(), name.upper()):
         if key in props and isinstance(props[key], dict):
             return props[key].get("data", []) or []
