@@ -98,7 +98,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v12</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v13</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -189,10 +189,11 @@ function seasonF(doy,s){return logistic((doy-s.dS)/6)*logistic((s.dE-doy)/6);}
 // und lässt bei Trockenphasen den Index absinken.
 function computeAPI(rain,k){const a=new Array(rain.length);let p=0;for(let i=0;i<rain.length;i++){p=k*p+(rain[i]||0);a[i]=p;}return a;}
 // Lag-gewichteter Mittelwert; Treiber liegt um (lag-h) Tage zurück (Reifezeit).
-function laggedMean(arr,s,h){
+// P = Anzahl gemessener Tage; age = P-i -> Zukunftstage (Prognose) haben age<=0.
+function laggedMean(arr,s,h,P){
   const n=arr.length, center=s.lag-h; let num=0,w=0,peak=0;
   for(let i=0;i<n;i++){
-    const age=n-i;                       // arr[-1]=gestern -> age 1
+    const age=P-i;                       // letzter Messtag (i=P-1) -> age 1 (gestern)
     const ww=Math.exp(-((age-center)**2)/(2*s.lagW**2));
     num+=(arr[i]||0)*ww; w+=ww; if(ww>peak)peak=ww;
   }
@@ -205,11 +206,14 @@ function speciesAllowed(props,key){
 }
 function growthIndex(props,key,h){
   const s=SPMODEL[key];
-  // API pro Zelle+k einmal cachen (unabhängig vom Horizont) -> Slider bleibt flüssig
-  if(!props._api||props._apiK!==s.k){props._api=computeAPI(props.rain,s.k);props._apiK=s.k;}
-  const lm=laggedMean(props._api,s,h);
+  // gemessene Reihe + AROME-Prognose zusammenhängen (Prognose = rainF/tF)
+  const rainAll=props._rA||(props._rA=props.rainF?props.rain.concat(props.rainF):props.rain);
+  const tAll=props._tA||(props._tA=props.tF?props.t.concat(props.tF):props.t);
+  const P=props.rain.length;             // Anzahl gemessener Tage
+  if(!props._api||props._apiK!==s.k){props._api=computeAPI(rainAll,s.k);props._apiK=s.k;}
+  const lm=laggedMean(props._api,s,h,P);
   const f_moist=Math.tanh(lm.val/s.apiRef);
-  const lt=laggedMean(props.t,s,h);
+  const lt=laggedMean(tAll,s,h,P);
   const tm=lt.cover>0?lt.val:15;
   const f_temp=Math.exp(-((tm-s.t_opt)**2)/(2*s.t_sig**2));
   const f_season=seasonF(state.refDoy+1+h,s);
@@ -412,7 +416,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v12';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v13';
     buildTabs(); draw(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
