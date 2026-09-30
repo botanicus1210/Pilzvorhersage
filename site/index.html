@@ -46,7 +46,7 @@
   #wval,#oval{font-family:var(--font-mono);font-size:11px;color:var(--accent);min-width:38px;text-align:right}
 
   #leg{padding:11px 14px;border-bottom:1px solid var(--border)}
-  #legbar{height:7px;border-radius:4px;margin:5px 0 3px;background:linear-gradient(to right,#1a3a14 0%,#2d6020 20%,#4a9930 40%,#6fcf3a 60%,#b8e030 80%,#f0d030 100%)}
+  #legbar{height:7px;border-radius:4px;margin:5px 0 3px;background:linear-gradient(to right,#143c16 0%,#2a7826 30%,#78b430 52%,#ebd734 70%,#f08c20 85%,#e22a28 100%)}
   #leglbl{display:flex;justify-content:space-between;font-size:9px;font-family:var(--font-mono);color:var(--muted)}
 
   #det{flex:1;overflow-y:auto;padding:12px 14px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
@@ -98,7 +98,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v13</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v14</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -125,8 +125,8 @@
       </div>
       <div class="lbl">Funde (iNaturalist)</div>
       <div id="ftoggle">
-        <button class="fbtn active" data-f="off">Aus</button>
-        <button class="fbtn" data-f="markers">Marker</button>
+        <button class="fbtn" data-f="off">Aus</button>
+        <button class="fbtn active" data-f="markers">Marker</button>
         <button class="fbtn" data-f="heat">Dichte</button>
       </div>
       <div id="fstatus" style="font-size:10px;color:var(--muted);margin:-6px 0 12px"></div>
@@ -173,7 +173,7 @@ const SPMODEL = {
 };
 const TLABELS={f_moist:'Bodenfeuchte (Modell)',f_temp:'Temperatur',f_season:'Saison',f_cover:'Datenabdeckung'};
 
-let state={sp:'eierschwammerl', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, view:'points', funde:null, fundeMode:'off', fundeLayers:[]};
+let state={sp:'steinpilz', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, view:'points', funde:null, fundeMode:'markers', fundeLayers:[]};
 
 // Welche Art gehoert zu welcher Fund-Gilde
 const SP_GUILD={steinpilz:'mykorrhiza_wald', sommersteinpilz:'mykorrhiza_wald',
@@ -241,7 +241,7 @@ try{ if(L.Control&&L.Control.Geocoder){
 }}catch(err){console.warn('Ortssuche n/a',err);}
 
 // ── Farbrampe ─────────────────────────────────────────────
-const RAMP=[[0,[20,50,16]],[15,[30,80,22]],[35,[50,130,32]],[55,[90,190,40]],[75,[175,220,40]],[100,[240,208,40]]];
+const RAMP=[[0,[20,60,22]],[30,[42,120,38]],[52,[120,180,48]],[70,[235,215,52]],[85,[240,140,32]],[100,[226,42,40]]];
 function idxCol(idx,a){
   let lo=RAMP[0],hi=RAMP[RAMP.length-1];
   for(let i=0;i<RAMP.length-1;i++){if(idx>=RAMP[i][0]&&idx<=RAMP[i+1][0]){lo=RAMP[i];hi=RAMP[i+1];break}}
@@ -416,8 +416,8 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v13';
-    buildTabs(); draw(); loadEl.classList.add('gone');
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v14';
+    buildTabs(); draw(); if(state.fundeMode!=='off')applyFunde(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
     loadEl.innerHTML=`<p style="color:var(--danger)">Fehler: ${e.message}</p><p style="color:var(--muted);font-size:10px;margin-top:6px;">pilzwachstum.geojson erreichbar?</p>`;});
