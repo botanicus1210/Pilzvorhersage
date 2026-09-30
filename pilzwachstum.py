@@ -83,7 +83,20 @@ def resolve_output_path():
 OUTPUT_PATH = None  # wird in run()/probe zur Laufzeit aufgeloest
 
 INCA_BASE = "https://dataset.api.hub.geosphere.at/v1/timeseries/historical/inca-v1-1h-1km"
-INCA_PARAMS = ["RR", "T2M"]   # <-- bei Bedarf nach --probe anpassen (Gross/Kleinschreibung!)
+INCA_PARAMS = ["RR", "T2M", "RH2M"]   # RR/T2M/RH2M; nach --probe pruefen (Gross/Klein)
+
+# Tau-/Nebelfeuchte: in klaren, feuchten Naechten haelt Tau/Nebel Streu+Boden feucht,
+# auch ganz ohne Regen (Herbstnebel!). Nachtstunden mit RH>=Schwelle und ~kein Regen
+# tragen ein kleines mm-Aequivalent zur Bodenfeuchte bei.
+DEW_RH_THRESH = 95.0      # % relative Feuchte -> nahe Saettigung (Tau/Nebel)
+DEW_MM_PER_HOUR = 0.05    # mm-Aequivalent pro Nebel-/Taustunde
+DEW_NIGHT = (20, 8)       # Nacht: Stunde >=20 oder <8
+
+# Prognose: AROME (nwp), 60h/2.5 Tage, 2.5km, CC BY 4.0, kein Key.
+# Niederschlag kommt AKKUMULIERT (rain_acc/snow_acc) -> muss de-akkumuliert werden.
+FORECAST_BASE = "https://dataset.api.hub.geosphere.at/v1/timeseries/forecast/nwp-v1-1h-2500m"
+FORECAST_PARAMS = ["rain_acc", "snow_acc", "t2m"]
+FORECAST_ENABLE = True        # False -> nur gemessene Daten
 
 OM_BASE = "https://api.open-meteo.com/v1/forecast"  # forecast-Endpoint kann past_days bis ~92
 OM_HOURLY = ["soil_moisture_7_to_28cm", "soil_temperature_7_to_28cm"]
@@ -230,16 +243,80 @@ def fetch_inca(points, start, end):
             # robust gegen Gross/Klein-Schreibung der Parameternamen
             rr = _param_array(props, "RR")
             tt = _param_array(props, "T2M")
+            rh = _param_array(props, "RH2M")
+            # Tau-/Nebelfeuchte pro Stunde -> effektiver Niederschlag = Regen + Tau
+            eff = []
+            for i in range(len(days)):
+                base = float(rr[i]) if (i < len(rr) and rr[i] is not None) else 0.0
+                hour = int(ts[i][11:13]) if len(ts[i]) >= 13 else 12
+                night = hour >= DEW_NIGHT[0] or hour < DEW_NIGHT[1]
+                humid = i < len(rh) and rh[i] is not None and float(rh[i]) >= DEW_RH_THRESH
+                dry = base < 0.1
+                eff.append(base + (DEW_MM_PER_HOUR if (night and humid and dry) else 0.0))
             out[(lat, lon)] = {
-                "rain": _to_daily(days, rr, how="sum"),
+                "rain": _to_daily(days, eff, how="sum"),   # inkl. Tau/Nebel
                 "tmean": _to_daily(days, tt, how="mean"),
             }
         time.sleep(REQUEST_PAUSE)
     return out
 
 
-def _param_array(props, name):
-    """Hole das data-Array zu einem Parameter, case-insensitiv."""
+def _deaccumulate(acc):
+    """Akkumulierte Reihe -> Stundenwerte (Differenzen, negative auf 0)."""
+    out = []
+    prev = 0.0
+    for v in acc:
+        if v is None:
+            out.append(0.0)
+            continue
+        d = float(v) - prev
+        out.append(d if d > 0 else 0.0)
+        prev = float(v)
+    return out
+
+
+def fetch_forecast(points):
+    """AROME-Prognose (naechste ~2.5 Tage) pro Punkt: taeglicher Regen + Temp.
+    rain_acc/snow_acc sind akkumuliert -> de-akkumulieren, dann Tagessumme."""
+    out = {}
+    par = ",".join(FORECAST_PARAMS)
+    for batch in chunked(points, BATCH_POINTS):
+        latlon = "&".join(f"lat_lon={lat},{lon}" for lat, lon in batch)
+        url = f"{FORECAST_BASE}?parameters={par}&output_format=geojson&{latlon}"
+        data = None
+        for attempt in range(4):
+            try:
+                data = _get_json(url)
+                break
+            except Exception as e:
+                if attempt == 3:
+                    print(f"[NWP] Batch nach 4 Versuchen uebersprungen: {e}",
+                          file=sys.stderr)
+                else:
+                    time.sleep(2 * (attempt + 1))
+        if data is None:
+            continue
+        ts = data.get("timestamps", [])
+        days = [t[:10] for t in ts]
+        feats = data.get("features", [])
+        for (lat, lon), feat in zip(batch, feats):
+            props = feat.get("properties", {}).get("parameters", {})
+            rain_acc = _param_array(props, "rain_acc")
+            snow_acc = _param_array(props, "snow_acc")
+            tt = _param_array(props, "t2m")
+            # Gesamtniederschlag (Wasser) = Regen + Schneewasser, de-akkumuliert
+            rr_h = _deaccumulate(rain_acc)
+            sn_h = _deaccumulate(snow_acc)
+            precip = [(rr_h[i] if i < len(rr_h) else 0.0)
+                      + (sn_h[i] if i < len(sn_h) else 0.0)
+                      for i in range(len(days))]
+            out[(lat, lon)] = {
+                "rain": _to_daily(days, precip, how="sum"),
+                "tmean": _to_daily(days, tt, how="mean"),
+            }
+        time.sleep(REQUEST_PAUSE)
+    return out
+
     for key in (name, name.lower(), name.upper()):
         if key in props and isinstance(props[key], dict):
             return props[key].get("data", []) or []
@@ -596,7 +673,7 @@ def growth_index(rain, tmean, soil, species_key, window):
 # GEOJSON-OUTPUT
 # --------------------------------------------------------------------------
 
-def build_geojson(points, inca, window, mask=None):
+def build_geojson(points, inca, window, mask=None, forecast=None):
     """Speichert pro Waldzelle die taeglichen Reihen (Regen, Temperatur) +
     Waldtyp-Codes. Der Wachstumsindex wird im Frontend gerechnet (Lag-Kernel,
     Prognose-Slider). Reihen sind chronologisch: [0]=aeltester Tag, [-1]=gestern."""
@@ -610,9 +687,13 @@ def build_geojson(points, inca, window, mask=None):
         temp = [round(float(x)) for x in d["tmean"]]
         props = {
             "forest": ",".join(sorted(cell_codes)),   # "" = unbekannt -> alle Arten
-            "rain": rain,
+            "rain": rain,      # gemessen (INCA)
             "t": temp,
         }
+        fc = forecast.get((lat, lon)) if forecast else None
+        if fc and fc.get("rain"):
+            props["rainF"] = [round(float(x), 1) for x in fc["rain"]]   # Prognose (AROME)
+            props["tF"] = [round(float(x)) for x in fc["tmean"]]
         feats.append({
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": [lon, lat]},
@@ -628,8 +709,9 @@ def build_geojson(points, inca, window, mask=None):
             "ref_doy": ref_date.timetuple().tm_yday,
             "days": MAX_WINDOW_DAYS,
             "grid_km": GRID_KM,
+            "has_forecast": bool(forecast),
             "species": {k: SPECIES[k]["label"] for k in SPECIES},
-            "attribution": "GeoSphere Austria INCA (CC BY 4.0); OpenStreetMap",
+            "attribution": "GeoSphere Austria INCA + AROME (CC BY 4.0); OpenStreetMap",
         },
         "features": feats,
     }
@@ -657,7 +739,12 @@ def run(window=14, output_path=None, grid_km=GRID_KM):
     inca = fetch_inca(points, start, end)
     print(f"[run] INCA: {len(inca)} Punkte mit Daten")
 
-    gj = build_geojson(points, inca, window, mask=mask)
+    forecast = None
+    if FORECAST_ENABLE:
+        forecast = fetch_forecast(points)
+        print(f"[run] AROME-Prognose: {len(forecast)} Punkte")
+
+    gj = build_geojson(points, inca, window, mask=mask, forecast=forecast)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tmp = output_path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
