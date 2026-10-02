@@ -51,6 +51,15 @@ jobs:
           python funde.py --run
           ls -lh site/ || true
 
+      - name: Schutzgebiete holen (OpenStreetMap)
+        env:
+          PILZ_SCHUTZ: site/schutzgebiete.geojson
+        continue-on-error: true       # optional
+        run: |
+          pip install osm2geojson
+          python schutzgebiete.py --run
+          ls -lh site/ || true
+
       - name: Pages konfigurieren
         uses: actions/configure-pages@v5
 
