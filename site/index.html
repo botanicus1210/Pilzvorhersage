@@ -36,7 +36,7 @@
   .spt.noseas::after{content:' ✕';font-size:9px}
 
   /* view toggle */
-  #vtoggle,#ftoggle{display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:20px;overflow:hidden;width:fit-content}
+  #vtoggle,#ftoggle,#stoggle{display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:20px;overflow:hidden;width:fit-content}
   .vbtn,.fbtn{padding:4px 12px;font-size:11px;font-weight:500;background:transparent;color:var(--muted);cursor:pointer;border:none}
   .vbtn.active,.fbtn.active{background:var(--accent);color:#0d1a0c}
 
@@ -98,7 +98,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v14</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v16</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -130,6 +130,13 @@
         <button class="fbtn" data-f="heat">Dichte</button>
       </div>
       <div id="fstatus" style="font-size:10px;color:var(--muted);margin:-6px 0 12px"></div>
+
+      <div class="lbl">Schutzgebiete</div>
+      <div id="stoggle">
+        <button class="fbtn active" data-s="off">Aus</button>
+        <button class="fbtn" data-s="on">An</button>
+      </div>
+      <div id="sstatus" style="font-size:10px;color:var(--muted);margin:-6px 0 12px"></div>
 
       <div class="lbl">Prognose</div>
       <div id="wrow">
@@ -170,19 +177,27 @@ const SPMODEL = {
   herbsttrompete:  {label:'Herbsttrompete',  emoji:'⚫', dS:220,dE:325, t_opt:13.5,t_sig:5.0, lag:14,lagW:6, k:0.91,apiRef:40, forest:['311','313']},
   morchel:         {label:'Morchel',         emoji:'🍄', dS:74, dE:150, t_opt:12.0,t_sig:4.5, lag:10,lagW:5, k:0.90,apiRef:36, forest:['311','313','324']},
   parasol:         {label:'Parasol',          emoji:'⚪', dS:210,dE:315, t_opt:16.0,t_sig:6.0, lag:12,lagW:5, k:0.90,apiRef:40, forest:['311','312','313','324']},
+  frostschneckling:{label:'Frostschneckling', emoji:'🟠', dS:274,dE:395, t_opt:4.0, t_sig:5.0, lag:12,lagW:6, k:0.92,apiRef:40, forest:['312','313']},
+  austernseitling: {label:'Austernseitling',  emoji:'🦪', dS:288,dE:425, t_opt:8.0, t_sig:6.5, lag:8, lagW:5, k:0.92,apiRef:34, forest:['311','313']},
+  samtfussruebling:{label:'Samtfußrübling',   emoji:'🟤', dS:305,dE:425, t_opt:4.0, t_sig:6.0, lag:8, lagW:5, k:0.92,apiRef:34, forest:['311','313']},
 };
 const TLABELS={f_moist:'Bodenfeuchte (Modell)',f_temp:'Temperatur',f_season:'Saison',f_cover:'Datenabdeckung'};
 
-let state={sp:'steinpilz', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, view:'points', funde:null, fundeMode:'markers', fundeLayers:[]};
+let state={sp:'steinpilz', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, view:'points', funde:null, fundeMode:'markers', fundeLayers:[], schutz:null, schutzLayer:null};
 
 // Welche Art gehoert zu welcher Fund-Gilde
 const SP_GUILD={steinpilz:'mykorrhiza_wald', sommersteinpilz:'mykorrhiza_wald',
   eierschwammerl:'feucht_mykorrhiza', herbsttrompete:'feucht_mykorrhiza',
-  morchel:'fruehling_au', parasol:'wiese_saprob'};
+  morchel:'fruehling_au', parasol:'wiese_saprob',
+  frostschneckling:'mykorrhiza_wald', austernseitling:'wiese_saprob', samtfussruebling:'wiese_saprob'};
 
 // ── Modell ────────────────────────────────────────────────
 function logistic(x){return x<-60?0:x>60?1:1/(1+Math.exp(-x));}
-function seasonF(doy,s){return logistic((doy-s.dS)/6)*logistic((s.dE-doy)/6);}
+function seasonF(doy,s){
+  // Winterarten: Fenster läuft übers Jahresende (dE>365) -> doy ggf. +365 rechnen
+  if(s.dE>365 && doy<(s.dE-365)) doy+=365;
+  return logistic((doy-s.dS)/6)*logistic((s.dE-doy)/6);
+}
 // Antecedent Precipitation Index = Bodenfeuchte-Proxy aus Tagesregen.
 //   api[i] = k*api[i-1] + rain[i]   (k = tägliche Rückhaltung; Rest = Drainage+Verdunstung)
 // Unterscheidet Starkregen (spikt, klingt ab) von durchgehender Feuchte (Plateau)
@@ -291,6 +306,27 @@ function ageColor(d){
   if(d<=14) return '#e0b84a';
   return '#9a9a9a';             // aelter
 }
+// ── Schutzgebiete-Overlay (Nationalparks + Naturschutzgebiete) ─
+function drawSchutz(on){
+  if(state.schutzLayer){map.removeLayer(state.schutzLayer);state.schutzLayer=null;}
+  if(!on||!state.schutz)return;
+  state.schutzLayer=L.geoJSON(state.schutz,{
+    style:{color:'#e0483a',weight:1.5,fillColor:'#e0483a',fillOpacity:0.18,dashArray:'4 3'},
+    onEachFeature:(f,l)=>l.bindTooltip(`<b>${f.properties.name}</b><br>${f.properties.kind}<br>Sammeln eingeschränkt/verboten — prüfen`,{sticky:true,className:'pztt'})
+  }).addTo(map);
+}
+function setSchutzStatus(m){document.getElementById('sstatus').textContent=m||'';}
+document.querySelectorAll('#stoggle .fbtn').forEach(b=>{b.onclick=()=>{
+  document.querySelectorAll('#stoggle .fbtn').forEach(x=>x.classList.toggle('active',x===b));
+  const on=b.dataset.s==='on';
+  if(on&&!state.schutz){
+    setSchutzStatus('lädt …');
+    fetch('schutzgebiete.geojson',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject())
+      .then(d=>{state.schutz=d;drawSchutz(true);setSchutzStatus((d.features?d.features.length:0)+' Gebiete · vor Ort prüfen');})
+      .catch(()=>setSchutzStatus('nicht geladen'));
+  } else { drawSchutz(on); setSchutzStatus(on?(state.schutz.features.length+' Gebiete · vor Ort prüfen'):''); }
+};});
+
 function clearFunde(){state.fundeLayers.forEach(l=>map.removeLayer(l));state.fundeLayers=[];}
 const FUNDE_GRAD={0.0:'#3b0d3b',0.35:'#a01a6b',0.65:'#ff3b6b',1.0:'#ff9020'};
 function drawFunde(){
@@ -416,7 +452,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v14';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v16';
     buildTabs(); draw(); if(state.fundeMode!=='off')applyFunde(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
