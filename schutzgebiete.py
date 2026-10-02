@@ -3,11 +3,14 @@
 """
 schutzgebiete.py  —  Schutzgebiete (Nationalparks + Naturschutzgebiete)
 
-Holt die Grenzen aus OpenStreetMap (Overpass, kein Key, KEINE Zusatzpakete)
-und schreibt schutzgebiete.geojson als zuschaltbares Overlay.
-Baut Polygone direkt aus 'out geom' zusammen (Relationen-Mitglieder + Wege).
+Holt die Grenzen aus OpenStreetMap (Overpass, kein Key) und schreibt
+schutzgebiete.geojson als zuschaltbares Overlay.
+osm2geojson setzt die Multipolygon-Relationen korrekt zusammen; Overpass
+wird mit mehreren Mirrors + Retry abgefragt (gegen 504).
 
-Standalone:  python3 schutzgebiete.py --run
+  pip install osm2geojson
+  python3 schutzgebiete.py --run
+
 Pfad ueber PILZ_SCHUTZ (env) oder site/schutzgebiete.geojson.
 """
 from __future__ import annotations
@@ -15,8 +18,8 @@ import os, sys, json, time
 from urllib import request, parse
 
 OVERPASS = [
+    "https://overpass.kumi.systems/api/interpreter",   # meist stabiler zuerst
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ]
 UA = "Pilzkarte/1.0 (Hobbyprojekt)"
@@ -59,15 +62,12 @@ def _fetch():
     return None
 
 
-def _ring(geom):
-    """geom: Liste {lat,lon} -> geschlossener Ring [[lon,lat],...] oder None."""
-    r = [[round(p["lon"], 4), round(p["lat"], 4)]
-         for p in geom if isinstance(p, dict) and "lat" in p and "lon" in p]
-    if len(r) < 4:
-        return None
-    if r[0] != r[-1]:
-        r.append(r[0])
-    return r
+def _round(obj, nd=4):
+    if isinstance(obj, list):
+        if obj and isinstance(obj[0], (int, float)) and len(obj) == 2:
+            return [round(obj[0], nd), round(obj[1], nd)]
+        return [_round(x, nd) for x in obj]
+    return obj
 
 
 def _kind(tags):
@@ -77,33 +77,28 @@ def _kind(tags):
 
 
 def run():
+    try:
+        import osm2geojson
+    except ImportError:
+        print("[schutz] osm2geojson fehlt -> pip install osm2geojson", file=sys.stderr)
+        return
     out = resolve_output_path()
     raw = _fetch()
     if not raw:
         print("[schutz] Overpass nicht erreichbar - Abbruch", file=sys.stderr)
         return
+    gj = osm2geojson.json2geojson(raw)
     feats = []
-    for el in raw.get("elements", []):
-        t = el.get("type")
-        tags = el.get("tags", {}) or {}
-        if t == "way" and el.get("geometry"):
-            ring = _ring(el["geometry"])
-            if ring:
-                feats.append({"type": "Feature",
-                              "geometry": {"type": "Polygon", "coordinates": [ring]},
-                              "properties": {"name": tags.get("name", "Schutzgebiet"),
-                                             "kind": _kind(tags)}})
-        elif t == "relation":
-            name = tags.get("name", "Schutzgebiet")
-            k = _kind(tags)
-            for m in el.get("members", []):
-                if m.get("type") == "way" and m.get("role") in ("outer", "") \
-                        and m.get("geometry"):
-                    ring = _ring(m["geometry"])
-                    if ring:
-                        feats.append({"type": "Feature",
-                                      "geometry": {"type": "Polygon", "coordinates": [ring]},
-                                      "properties": {"name": name, "kind": k}})
+    for f in gj.get("features", []):
+        geom = f.get("geometry") or {}
+        if geom.get("type") not in ("Polygon", "MultiPolygon"):
+            continue
+        tags = (f.get("properties") or {}).get("tags", {}) or {}
+        feats.append({
+            "type": "Feature",
+            "geometry": {"type": geom["type"], "coordinates": _round(geom["coordinates"])},
+            "properties": {"name": tags.get("name") or "Schutzgebiet", "kind": _kind(tags)},
+        })
     fc = {"type": "FeatureCollection",
           "metadata": {"count": len(feats), "source": "OpenStreetMap (Overpass); ODbL",
                        "note": "Sammeln eingeschraenkt/verboten — vor Ort pruefen"},
@@ -113,7 +108,7 @@ def run():
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(fc, fh, separators=(",", ":"), ensure_ascii=False)
     os.replace(tmp, out)
-    print(f"[schutz] geschrieben: {out}  ({len(feats)} Flaechen)")
+    print(f"[schutz] geschrieben: {out}  ({len(feats)} Gebiete)")
 
 
 if __name__ == "__main__":
