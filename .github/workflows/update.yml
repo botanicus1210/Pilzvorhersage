@@ -56,6 +56,7 @@ jobs:
           PILZ_SCHUTZ: site/schutzgebiete.geojson
         continue-on-error: true       # optional
         run: |
+          pip install osm2geojson
           python schutzgebiete.py --run
           ls -lh site/ || true
 
