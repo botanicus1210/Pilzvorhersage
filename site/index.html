@@ -98,7 +98,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v16</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v17</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -239,6 +239,7 @@ function growthIndex(props,key,h){
 
 // ── Map + Esri Basemaps (kein Key) ────────────────────────
 const map=L.map('map',{center:[47.5,13.5],zoom:7,zoomControl:true});
+map.createPane('schutzPane');map.getPane('schutzPane').style.zIndex=650;
 const ESRI='https://services.arcgisonline.com/arcgis/rest/services/';
 const A_ESRI='Tiles © <a href="https://www.esri.com/">Esri</a> · GeoSphere INCA CC BY 4.0';
 function esri(p){return L.tileLayer(ESRI+p+'/MapServer/tile/{z}/{y}/{x}',{attribution:A_ESRI,maxNativeZoom:16,maxZoom:18});}
@@ -311,7 +312,8 @@ function drawSchutz(on){
   if(state.schutzLayer){map.removeLayer(state.schutzLayer);state.schutzLayer=null;}
   if(!on||!state.schutz)return;
   state.schutzLayer=L.geoJSON(state.schutz,{
-    style:{color:'#e0483a',weight:1.5,fillColor:'#e0483a',fillOpacity:0.18,dashArray:'4 3'},
+    pane:'schutzPane',
+    style:{color:'#ff2e2e',weight:2.5,fillColor:'#ff2e2e',fillOpacity:0.22,dashArray:'5 3'},
     onEachFeature:(f,l)=>l.bindTooltip(`<b>${f.properties.name}</b><br>${f.properties.kind}<br>Sammeln eingeschränkt/verboten — prüfen`,{sticky:true,className:'pztt'})
   }).addTo(map);
 }
@@ -452,7 +454,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v16';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v17';
     buildTabs(); draw(); if(state.fundeMode!=='off')applyFunde(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
