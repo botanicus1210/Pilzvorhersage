@@ -23,10 +23,10 @@ OVERPASS = [
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ]
 UA = "Pilzkarte/1.0 (Hobbyprojekt)"
-TIMEOUT = 200
+TIMEOUT = 330
 
 QUERY = """
-[out:json][timeout:180];
+[out:json][timeout:300];
 area["ISO3166-1"="AT"][admin_level=2]->.a;
 (
   relation["boundary"="national_park"](area.a);
@@ -49,16 +49,27 @@ def resolve_output_path():
 
 
 def _fetch():
+    """Nur eine Antwort MIT Elementen und ohne Laufzeitfehler zaehlt.
+    Overpass liefert bei Ueberlastung oft HTTP 200 + leere Liste + 'remark'."""
     body = parse.urlencode({"data": QUERY}).encode()
     for ep in OVERPASS:
         for attempt in range(2):
             try:
                 req = request.Request(ep, data=body, headers={"User-Agent": UA})
                 with request.urlopen(req, timeout=TIMEOUT) as r:
-                    return json.loads(r.read().decode("utf-8"))
+                    raw = json.loads(r.read().decode("utf-8"))
+                n = len(raw.get("elements", []))
+                remark = raw.get("remark", "")
+                if n == 0 or "error" in remark.lower():
+                    print(f"[schutz] {ep} Versuch {attempt+1}: unbrauchbar "
+                          f"({n} Elemente) {remark[:120]}", file=sys.stderr)
+                    time.sleep(5)
+                    continue
+                print(f"[schutz] {ep}: {n} Elemente erhalten")
+                return raw
             except Exception as e:
                 print(f"[schutz] {ep} Versuch {attempt+1}: {e}", file=sys.stderr)
-                time.sleep(3)
+                time.sleep(5)
     return None
 
 
@@ -99,6 +110,14 @@ def run():
             "geometry": {"type": geom["type"], "coordinates": _round(geom["coordinates"])},
             "properties": {"name": tags.get("name") or "Schutzgebiet", "kind": _kind(tags)},
         })
+    if not feats:
+        types = {}
+        for f in gj.get("features", []):
+            ty = (f.get("geometry") or {}).get("type")
+            types[ty] = types.get(ty, 0) + 1
+        print(f"[schutz] 0 Flaechen erzeugt (Geometrietypen: {types}) - "
+              f"vorhandene Datei bleibt unveraendert", file=sys.stderr)
+        sys.exit(1)
     fc = {"type": "FeatureCollection",
           "metadata": {"count": len(feats), "source": "OpenStreetMap (Overpass); ODbL",
                        "note": "Sammeln eingeschraenkt/verboten — vor Ort pruefen"},
