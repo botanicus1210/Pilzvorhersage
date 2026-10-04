@@ -43,7 +43,7 @@
   #wrow,#orow{display:flex;align-items:center;gap:8px}
   #wslide,#oslide{flex:1;-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;background:linear-gradient(to right,var(--accent) var(--pct,47%),var(--border) var(--pct,47%));outline:none;cursor:pointer}
   #wslide::-webkit-slider-thumb,#oslide::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(111,207,58,.18)}
-  #wval,#oval{font-family:var(--font-mono);font-size:11px;color:var(--accent);min-width:38px;text-align:right}
+  #wval,#oval{font-family:var(--font-mono);font-size:11px;color:var(--accent);min-width:38px;text-align:right;white-space:nowrap}
 
   #leg{padding:11px 14px;border-bottom:1px solid var(--border)}
   #legbar{height:7px;border-radius:4px;margin:5px 0 3px;background:linear-gradient(to right,#143c16 0%,#2a7826 30%,#78b430 52%,#ebd734 70%,#f08c20 85%,#e22a28 100%)}
@@ -98,7 +98,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v18</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v20</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -138,9 +138,9 @@
       </div>
       <div id="sstatus" style="font-size:10px;color:var(--muted);margin:-6px 0 12px"></div>
 
-      <div class="lbl">Prognose</div>
+      <div class="lbl">Zeitpunkt (Rückblick / Prognose)</div>
       <div id="wrow">
-        <input type="range" id="wslide" min="0" max="21" value="0" step="1">
+        <input type="range" id="wslide" min="-7" max="21" value="0" step="1">
         <span id="wval">heute</span>
       </div>
     </div>
@@ -171,8 +171,8 @@ const GEOJSON='pilzwachstum.geojson';
 //  lag/lagW: Fruchtkörper erscheinen ~lag Tage nach dem Regen (Reifezeit).
 //  forest: passende CORINE-Waldtypen (311 Laub,312 Nadel,313 Misch,324 Übergang).
 const SPMODEL = {
-  steinpilz:       {label:'Herbststeinpilz', emoji:'🟤', dS:196,dE:315, t_opt:15.0,t_sig:5.0, lag:14,lagW:6, k:0.91,apiRef:40, forest:['311','312','313']},
-  sommersteinpilz: {label:'Sommersteinpilz', emoji:'🟫', dS:150,dE:270, t_opt:17.5,t_sig:5.5, lag:14,lagW:6, k:0.88,apiRef:40, forest:['311','313']},
+  steinpilz:       {label:'Herbststeinpilz', emoji:'🟤', dS:196,dE:315, t_opt:15.0,t_sig:5.0, lag:7,lagW:3, k:0.91,apiRef:40, forest:['311','312','313']},
+  sommersteinpilz: {label:'Sommersteinpilz', emoji:'🟫', dS:150,dE:270, t_opt:17.5,t_sig:5.5, lag:7,lagW:3, k:0.88,apiRef:40, forest:['311','313']},
   eierschwammerl:  {label:'Eierschwammerl',  emoji:'🟡', dS:152,dE:300, t_opt:17.0,t_sig:6.0, lag:12,lagW:5, k:0.89,apiRef:42, forest:['311','312','313']},
   herbsttrompete:  {label:'Herbsttrompete',  emoji:'⚫', dS:220,dE:325, t_opt:13.5,t_sig:5.0, lag:14,lagW:6, k:0.91,apiRef:40, forest:['311','313']},
   morchel:         {label:'Morchel',         emoji:'🍄', dS:74, dE:150, t_opt:12.0,t_sig:4.5, lag:10,lagW:5, k:0.90,apiRef:36, forest:['311','313','324']},
@@ -181,7 +181,7 @@ const SPMODEL = {
   austernseitling: {label:'Austernseitling',  emoji:'🦪', dS:288,dE:425, t_opt:8.0, t_sig:6.5, lag:8, lagW:5, k:0.92,apiRef:34, forest:['311','313']},
   samtfussruebling:{label:'Samtfußrübling',   emoji:'🟤', dS:305,dE:425, t_opt:4.0, t_sig:6.0, lag:8, lagW:5, k:0.92,apiRef:34, forest:['311','313']},
 };
-const TLABELS={f_moist:'Bodenfeuchte (Modell)',f_temp:'Temperatur',f_season:'Saison',f_cover:'Datenabdeckung'};
+const TLABELS={f_moist:'Bodenfeuchte (Modell)',f_fresh:'Frische (aktuell)',f_temp:'Temperatur',f_season:'Saison',f_cover:'Datenabdeckung'};
 
 let state={sp:'steinpilz', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, view:'points', funde:null, fundeMode:'markers', fundeLayers:[], schutz:null, schutzLayer:null};
 
@@ -203,6 +203,27 @@ function seasonF(doy,s){
 // Unterscheidet Starkregen (spikt, klingt ab) von durchgehender Feuchte (Plateau)
 // und lässt bei Trockenphasen den Index absinken.
 function computeAPI(rain,k){const a=new Array(rain.length);let p=0;for(let i=0;i<rain.length;i++){p=k*p+(rain[i]||0);a[i]=p;}return a;}
+// Verdunstung: Dampfdruckdefizit (kPa) aus Temperatur + rel. Feuchte
+const ESAT=T=>0.6108*Math.exp(17.27*T/(T+237.3));
+const VPD=(T,RH)=>Math.max(0,ESAT(T)*(1-RH/100));
+const KD_ADD=0.04, ETC=2.6, APIREF_F=0.8;   // Drainage, mm/(d*kPa), Skalierung
+// Bodenfeuchte mit wetterabhängigem Verlust: warm+trocken zieht schneller runter
+function computeAPI_ET(rain,t,rh,kd){const a=new Array(rain.length);let p=0;
+  for(let i=0;i<rain.length;i++){const et=Math.min(5,ETC*VPD(t[i]??15,rh[i]??80));
+    p=Math.max(0,kd*p+(rain[i]||0)-et);a[i]=p;}return a;}
+// Frische: letzte ~3 Tage (relativ zum Horizont) warm/trocken ohne Regen -> Fruchtkörper vertrocknen
+function freshF(rain,t,rh,P,h){let v=0,rr=0,n=0;
+  for(let i=0;i<rain.length;i++){const a=(P-i)+h;
+    if(a>=1&&a<=3&&rh[i]!=null){v+=VPD(t[i]??15,rh[i]);rr+=rain[i]||0;n++;}}
+  if(!n){                                  // jenseits der Daten: letzte bekannte Lage fortschreiben,
+    const L=rain.length; if(L<3||h<=0) return 1;   // klingt mit dem Abstand langsam ab
+    let v2=0,r2=0,m=0; for(let i=L-3;i<L;i++){ if(rh[i]==null) continue; v2+=VPD(t[i]??15,rh[i]); r2+=rain[i]||0; m++; }
+    if(!m) return 1; v2/=m;
+    const f0=1-0.55*logistic((v2-0.55)/0.12)*(1-Math.tanh(r2/6));
+    const gap=Math.max(0,h-(L-P)); return 1-(1-f0)*Math.exp(-gap/10);
+  }
+  v/=n; const dry=logistic((v-0.55)/0.12)*(1-Math.tanh(rr/6));
+  return 1-0.55*dry;}
 // Lag-gewichteter Mittelwert; Treiber liegt um (lag-h) Tage zurück (Reifezeit).
 // P = Anzahl gemessener Tage; age = P-i -> Zukunftstage (Prognose) haben age<=0.
 function laggedMean(arr,s,h,P){
@@ -225,16 +246,25 @@ function growthIndex(props,key,h){
   const rainAll=props._rA||(props._rA=props.rainF?props.rain.concat(props.rainF):props.rain);
   const tAll=props._tA||(props._tA=props.tF?props.t.concat(props.tF):props.t);
   const P=props.rain.length;             // Anzahl gemessener Tage
-  if(!props._api||props._apiK!==s.k){props._api=computeAPI(rainAll,s.k);props._apiK=s.k;}
+  const hasRH=Array.isArray(props.rh)&&props.rh.length===P;
+  let rhAll=null;
+  if(hasRH){ rhAll=props._hA||(props._hA=props.rh.concat(
+      props.rhF&&props.rainF&&props.rhF.length===props.rainF.length?props.rhF:
+      (props.rainF?new Array(props.rainF.length).fill(80):[]))); }
+  if(!props._api||props._apiK!==s.k){
+    props._api = hasRH ? computeAPI_ET(rainAll,tAll,rhAll,Math.min(0.97,s.k+KD_ADD))
+                       : computeAPI(rainAll,s.k);           // alte Daten ohne Feuchte
+    props._apiK=s.k;}
   const lm=laggedMean(props._api,s,h,P);
-  const f_moist=Math.tanh(lm.val/s.apiRef);
+  const f_moist=Math.tanh(lm.val/(hasRH?s.apiRef*APIREF_F:s.apiRef));
+  const f_fresh=hasRH?freshF(rainAll,tAll,rhAll,P,h):1;
   const lt=laggedMean(tAll,s,h,P);
   const tm=lt.cover>0?lt.val:15;
   const f_temp=Math.exp(-((tm-s.t_opt)**2)/(2*s.t_sig**2));
   const f_season=seasonF(state.refDoy+1+h,s);
   const f_cover=Math.min(1,lm.cover/0.6);            // liegt Treiberfenster in den Daten?
-  const idx=Math.max(0,Math.min(1,f_season*f_moist*f_temp*f_cover));
-  return {index:Math.round(idx*100),f_moist,f_temp,f_season,f_cover,api:lm.val,tm};
+  const idx=Math.max(0,Math.min(1,f_season*f_moist*f_fresh*f_temp*f_cover));
+  return {index:Math.round(idx*100),f_moist,f_fresh,f_temp,f_season,f_cover,api:lm.val,tm};
 }
 
 // ── Map + Esri Basemaps (kein Key) ────────────────────────
@@ -389,7 +419,10 @@ document.querySelectorAll('#ftoggle .fbtn').forEach(b=>{b.onclick=()=>{
 // ── Detail ────────────────────────────────────────────────
 function termBar(k,v,col){const p=Math.round(v*100);
   return `<div class="tr"><div class="th"><span>${TLABELS[k]||k}</span><span class="tv">${p}%</span></div><div class="tk"><div class="tf" style="width:${p}%;background:${col}"></div></div></div>`;}
-function hzLabel(){return state.hz===0?'heute':'in '+state.hz+' Tagen';}
+function hzDate(v){if(!state.refDate)return '';const d=new Date(state.refDate+'T12:00:00');d.setDate(d.getDate()+1+v);
+  return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.';}
+function hzLabel(){const v=state.hz,d=hzDate(v);
+  return (v===0?'heute':v<0?'vor '+(-v)+' Tagen':'in '+v+' Tagen')+(d?' ('+d+')':'');}
 function detail(f){
   const [lon,lat]=f.geometry.coordinates, p=f.properties;
   let h=`<div class="dcoord">${lat.toFixed(4)}° N &nbsp;${lon.toFixed(4)}° E</div>`;
@@ -400,7 +433,7 @@ function detail(f){
     h+=`<div class="spn">${SPMODEL[k].emoji} ${SPMODEL[k].label}</div>`;
     h+=`<div class="ibig"><span class="inum" style="color:${col}">${res.index}</span><span class="iunit">/ 100</span></div>`;
     h+=`<div class="ilbl">Prognose · ${hzLabel()}</div><div class="ttitle">Einflussfaktoren</div>`;
-    ['f_moist','f_temp','f_season','f_cover'].forEach(key=>h+=termBar(key,res[key],col));
+    ['f_moist','f_fresh','f_temp','f_season','f_cover'].forEach(key=>h+=termBar(key,res[key],col));
     h+=`<div class="rgrid"><div class="rc"><div class="rl">Feuchte-Index</div><div class="rv">${res.api.toFixed(0)}</div></div>`;
     h+=`<div class="rc"><div class="rl">Temp. (Lag)</div><div class="rv">${res.tm.toFixed(0)} °C</div></div></div></div>`;
   });
@@ -428,8 +461,10 @@ document.querySelectorAll('.vbtn').forEach(b=>{b.onclick=()=>{
 
 // ── Slider: Prognose-Horizont ─────────────────────────────
 const sl=document.getElementById('wslide'),wv=document.getElementById('wval');
-function setHz(v){state.hz=v; wv.textContent=v===0?'heute':'+'+v+' T';
-  sl.style.setProperty('--pct',(v/21*100).toFixed(1)+'%'); wv.style.color=v!==0?'var(--accent2)':'var(--accent)';}
+function setHz(v){state.hz=v; const d=hzDate(v);
+  wv.textContent=(v===0?'heute':(v<0?'−'+(-v)+' T':'+'+v+' T'))+(d&&v!==0?' · '+d:'');
+  sl.style.setProperty('--pct',((v+7)/28*100).toFixed(1)+'%');
+  wv.style.color=v===0?'var(--accent)':(v<0?'#7fb2e5':'var(--accent2)');}
 sl.addEventListener('input',e=>{setHz(+e.target.value);draw();}); setHz(0);
 
 // ── Slider: Deckkraft ─────────────────────────────────────
@@ -447,6 +482,7 @@ fetch(GEOJSON,{cache:'no-store'})
     clearTimeout(killTimer); state.data=d;
     const m=d.metadata||{};
     if(typeof m.ref_doy==='number') state.refDoy=m.ref_doy;
+    if(m.ref_date){state.refDate=m.ref_date; setHz(state.hz);}
     // Format-Check: neues GeoJSON hat pro Zelle Regenreihen (rain[])
     const f0=d.features&&d.features[0];
     if(!f0||!f0.properties||!Array.isArray(f0.properties.rain)){
@@ -454,7 +490,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v18';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v20';
     buildTabs(); draw(); if(state.fundeMode!=='off')applyFunde(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
