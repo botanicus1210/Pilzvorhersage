@@ -1,14 +1,15 @@
 # .github/workflows/update.yml
-# Erzeugt taeglich frische Pilzwachstums-Daten und veroeffentlicht die Karte
-# auf GitHub Pages. Kein eigener Server noetig.
+# - schedule (taeglich):   Wetter + Funde neu rechnen, Schutzgebiete vom Live-Stand uebernehmen
+# - push (Code-Aenderung): NUR neu ausliefern, alle Daten vom Live-Stand uebernehmen (schnell)
+# - workflow_dispatch:     alles komplett neu bauen
 name: Pilzkarte aktualisieren
 
 on:
   schedule:
-    - cron: "0 6 * * *"      # taeglich 06:00 UTC (~08:00 CET/CEST)
-  workflow_dispatch: {}       # erlaubt manuelles Starten im Actions-Tab
+    - cron: "0 6 * * *"      # taeglich 06:00 UTC
+  workflow_dispatch: {}
   push:
-    branches: [ main ]        # bei jedem Push auch neu bauen
+    branches: [ main ]
 
 permissions:
   contents: read
@@ -25,6 +26,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      LIVE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
     steps:
       - name: Repo auschecken
         uses: actions/checkout@v4
@@ -34,31 +37,41 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Daten erzeugen (INCA -> GeoJSON)
-        env:
-          PILZ_OUTPUT: site/pilzwachstum.geojson   # Ausgabe in den Webordner
-          PILZ_MASK: pilz_forest_mask.json          # vorgebaute Wald-Maske aus dem Repo
+      - name: Vorhandene Daten vom Live-Stand uebernehmen
         run: |
           mkdir -p site
-          python pilzwachstum.py --run
-          ls -lh site/
+          for f in pilzwachstum.geojson funde.geojson schutzgebiete.geojson; do
+            curl -fsSL "$LIVE/$f" -o "site/$f" && echo "uebernommen: $f" || echo "nicht vorhanden: $f"
+          done
+
+      - name: Daten erzeugen (INCA + AROME -> GeoJSON)
+        if: github.event_name != 'push'
+        env:
+          PILZ_OUTPUT: site/pilzwachstum.geojson
+          PILZ_MASK: pilz_forest_mask.json
+        run: python pilzwachstum.py --run
 
       - name: Fundmeldungen holen (iNaturalist)
+        if: github.event_name != 'push'
         env:
           PILZ_FUNDE: site/funde.geojson
-        continue-on-error: true       # Funde sind optional - Karte laeuft auch ohne
-        run: |
-          python funde.py --run
-          ls -lh site/ || true
+        continue-on-error: true
+        run: python funde.py --run
 
-      - name: Schutzgebiete holen (OpenStreetMap)
+      - name: Schutzgebiete holen (nur manuell oder wenn fehlend)
         env:
           PILZ_SCHUTZ: site/schutzgebiete.geojson
-        continue-on-error: true       # optional
+        continue-on-error: true
         run: |
-          pip install osm2geojson
-          python schutzgebiete.py --run
-          ls -lh site/ || true
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ ! -s site/schutzgebiete.geojson ]; then
+            pip install osm2geojson
+            python schutzgebiete.py --run
+          else
+            echo "Schutzgebiete vom Live-Stand uebernommen"
+          fi
+
+      - name: Inhalt pruefen
+        run: ls -lh site/
 
       - name: Pages konfigurieren
         uses: actions/configure-pages@v5
