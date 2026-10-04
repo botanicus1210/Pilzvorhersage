@@ -41,6 +41,9 @@
   .vbtn.active,.fbtn.active{background:var(--accent);color:#0d1a0c}
 
   #wrow,#orow{display:flex;align-items:center;gap:8px}
+  .stepbtn{width:24px;height:24px;flex:none;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);font-size:15px;line-height:1;cursor:pointer}
+  .stepbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .stepbtn:active{background:var(--border)}
   #wslide,#oslide{flex:1;-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;background:linear-gradient(to right,var(--accent) var(--pct,47%),var(--border) var(--pct,47%));outline:none;cursor:pointer}
   #wslide::-webkit-slider-thumb,#oslide::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(111,207,58,.18)}
   #wval,#oval{font-family:var(--font-mono);font-size:11px;color:var(--accent);min-width:38px;text-align:right;white-space:nowrap}
@@ -98,7 +101,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v20</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v21</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -140,9 +143,12 @@
 
       <div class="lbl">Zeitpunkt (Rückblick / Prognose)</div>
       <div id="wrow">
+        <button class="stepbtn" id="hzMinus" title="1 Tag zurück">−</button>
         <input type="range" id="wslide" min="-7" max="21" value="0" step="1">
+        <button class="stepbtn" id="hzPlus" title="1 Tag vor">+</button>
         <span id="wval">heute</span>
       </div>
+      <div style="margin:-4px 0 10px"><button class="stepbtn" id="hzToday" style="width:auto;padding:0 8px;font-size:10px">heute</button></div>
     </div>
 
     <div id="leg">
@@ -466,6 +472,13 @@ function setHz(v){state.hz=v; const d=hzDate(v);
   sl.style.setProperty('--pct',((v+7)/28*100).toFixed(1)+'%');
   wv.style.color=v===0?'var(--accent)':(v<0?'#7fb2e5':'var(--accent2)');}
 sl.addEventListener('input',e=>{setHz(+e.target.value);draw();}); setHz(0);
+function stepHz(d){const v=Math.max(+sl.min,Math.min(+sl.max,state.hz+d));if(v===state.hz)return;sl.value=v;setHz(v);draw();}
+document.getElementById('hzMinus').onclick=()=>stepHz(-1);
+document.getElementById('hzPlus').onclick=()=>stepHz(1);
+document.getElementById('hzToday').onclick=()=>stepHz(-state.hz);
+// Tastatur: Pfeil links/rechts (ausser beim Tippen in der Ortssuche)
+document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'&&e.target.type==='text')return;
+  if(e.key==='ArrowLeft'){e.preventDefault();stepHz(-1);} else if(e.key==='ArrowRight'){e.preventDefault();stepHz(1);}});
 
 // ── Slider: Deckkraft ─────────────────────────────────────
 const ol=document.getElementById('oslide'),ov=document.getElementById('oval');
@@ -490,7 +503,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v20';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v21';
     buildTabs(); draw(); if(state.fundeMode!=='off')applyFunde(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
