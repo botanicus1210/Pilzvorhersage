@@ -98,7 +98,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v17</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v18</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -380,9 +380,9 @@ function refreshFundeStatus(){
   const n=fundeCountForGuild();
   fundeStatus(n?`${n} Funde (${SPMODEL[state.sp].label}-Gilde, 21 Tage)`:'keine Funde in dieser Gilde');
 }
-document.querySelectorAll('.fbtn').forEach(b=>{b.onclick=()=>{
+document.querySelectorAll('#ftoggle .fbtn').forEach(b=>{b.onclick=()=>{
   state.fundeMode=b.dataset.f;
-  document.querySelectorAll('.fbtn').forEach(x=>x.classList.toggle('active',x===b));
+  document.querySelectorAll('#ftoggle .fbtn').forEach(x=>x.classList.toggle('active',x===b));
   applyFunde();
 };});
 
@@ -454,7 +454,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v17';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v18';
     buildTabs(); draw(); if(state.fundeMode!=='off')applyFunde(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
