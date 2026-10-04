@@ -95,7 +95,7 @@ DEW_NIGHT = (20, 8)       # Nacht: Stunde >=20 oder <8
 # Prognose: AROME (nwp), 60h/2.5 Tage, 2.5km, CC BY 4.0, kein Key.
 # Niederschlag kommt AKKUMULIERT (rain_acc/snow_acc) -> muss de-akkumuliert werden.
 FORECAST_BASE = "https://dataset.api.hub.geosphere.at/v1/timeseries/forecast/nwp-v1-1h-2500m"
-FORECAST_PARAMS = ["rain_acc", "snow_acc", "t2m"]
+FORECAST_PARAMS = ["rain_acc", "snow_acc", "t2m", "rh2m"]
 FORECAST_ENABLE = True        # False -> nur gemessene Daten
 
 OM_BASE = "https://api.open-meteo.com/v1/forecast"  # forecast-Endpoint kann past_days bis ~92
@@ -256,6 +256,7 @@ def fetch_inca(points, start, end):
             out[(lat, lon)] = {
                 "rain": _to_daily(days, eff, how="sum"),   # inkl. Tau/Nebel
                 "tmean": _to_daily(days, tt, how="mean"),
+                "rh": _to_daily(days, rh, how="mean"),     # rel. Feuchte -> Verdunstung
             }
         time.sleep(REQUEST_PAUSE)
     return out
@@ -279,15 +280,27 @@ def fetch_forecast(points):
     """AROME-Prognose (naechste ~2.5 Tage) pro Punkt: taeglicher Regen + Temp.
     rain_acc/snow_acc sind akkumuliert -> de-akkumulieren, dann Tagessumme."""
     out = {}
-    par = ",".join(FORECAST_PARAMS)
+    params = list(FORECAST_PARAMS)
     for batch in chunked(points, BATCH_POINTS):
         latlon = "&".join(f"lat_lon={lat},{lon}" for lat, lon in batch)
-        url = f"{FORECAST_BASE}?parameters={par}&output_format=geojson&{latlon}"
         data = None
         for attempt in range(4):
+            par = ",".join(params)
+            url = f"{FORECAST_BASE}?parameters={par}&output_format=geojson&{latlon}"
             try:
                 data = _get_json(url)
                 break
+            except error.HTTPError as e:
+                if e.code == 400 and "rh2m" in params:   # Parameter unbekannt -> ohne
+                    print("[NWP] rh2m nicht verfuegbar - ohne Luftfeuchte weiter",
+                          file=sys.stderr)
+                    params.remove("rh2m")
+                    continue
+                if attempt == 3:
+                    print(f"[NWP] Batch nach 4 Versuchen uebersprungen: {e}",
+                          file=sys.stderr)
+                else:
+                    time.sleep(2 * (attempt + 1))
             except Exception as e:
                 if attempt == 3:
                     print(f"[NWP] Batch nach 4 Versuchen uebersprungen: {e}",
@@ -310,9 +323,11 @@ def fetch_forecast(points):
             precip = [(rr_h[i] if i < len(rr_h) else 0.0)
                       + (sn_h[i] if i < len(sn_h) else 0.0)
                       for i in range(len(days))]
+            rh = _param_array(props, "rh2m")
             out[(lat, lon)] = {
                 "rain": _to_daily(days, precip, how="sum"),
                 "tmean": _to_daily(days, tt, how="mean"),
+                "rh": _to_daily(days, rh, how="mean") if rh else [],
             }
         time.sleep(REQUEST_PAUSE)
     return out
@@ -693,10 +708,14 @@ def build_geojson(points, inca, window, mask=None, forecast=None):
             "rain": rain,      # gemessen (INCA)
             "t": temp,
         }
+        if d.get("rh"):
+            props["rh"] = [round(float(x)) for x in d["rh"]]
         fc = forecast.get((lat, lon)) if forecast else None
         if fc and fc.get("rain"):
             props["rainF"] = [round(float(x), 1) for x in fc["rain"]]   # Prognose (AROME)
             props["tF"] = [round(float(x)) for x in fc["tmean"]]
+            if fc.get("rh"):
+                props["rhF"] = [round(float(x)) for x in fc["rh"]]
         feats.append({
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": [lon, lat]},
