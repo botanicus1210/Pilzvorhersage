@@ -101,7 +101,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v22</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v23</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -195,7 +195,7 @@ let state={sp:'steinpilz', hz:0, refDoy:200, data:null, layers:[], dotOp:0.3, vi
 const SP_GUILD={steinpilz:'mykorrhiza_wald', sommersteinpilz:'mykorrhiza_wald',
   eierschwammerl:'feucht_mykorrhiza', herbsttrompete:'feucht_mykorrhiza',
   morchel:'fruehling_au', parasol:'wiese_saprob',
-  frostschneckling:'mykorrhiza_wald', austernseitling:'wiese_saprob', samtfussruebling:'wiese_saprob'};
+  frostschneckling:'mykorrhiza_wald', austernseitling:'holz_winter', samtfussruebling:'holz_winter'};
 
 // ── Modell ────────────────────────────────────────────────
 function logistic(x){return x<-60?0:x>60?1:1/(1+Math.exp(-x));}
@@ -503,7 +503,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v22';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v23';
     buildTabs(); draw(); if(state.fundeMode!=='off')applyFunde(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
