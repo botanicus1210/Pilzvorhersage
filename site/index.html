@@ -101,7 +101,7 @@
 </head>
 <body>
 
-<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v21</span></p></div>
+<div id="load"><div class="ring"></div><p>Wachstumsdaten werden geladen … <span style="opacity:.4">v22</span></p></div>
 
 <div id="app">
   <div id="map"></div>
@@ -177,10 +177,10 @@ const GEOJSON='pilzwachstum.geojson';
 //  lag/lagW: Fruchtkörper erscheinen ~lag Tage nach dem Regen (Reifezeit).
 //  forest: passende CORINE-Waldtypen (311 Laub,312 Nadel,313 Misch,324 Übergang).
 const SPMODEL = {
-  steinpilz:       {label:'Herbststeinpilz', emoji:'🟤', dS:196,dE:315, t_opt:15.0,t_sig:5.0, lag:7,lagW:3, k:0.91,apiRef:40, forest:['311','312','313']},
+  steinpilz:       {label:'Herbststeinpilz', emoji:'🟤', dS:196,dE:315, t_opt:14.0,t_sig:6.5, lag:7,lagW:3, k:0.91,apiRef:40, forest:['311','312','313']},
   sommersteinpilz: {label:'Sommersteinpilz', emoji:'🟫', dS:150,dE:270, t_opt:17.5,t_sig:5.5, lag:7,lagW:3, k:0.88,apiRef:40, forest:['311','313']},
   eierschwammerl:  {label:'Eierschwammerl',  emoji:'🟡', dS:152,dE:300, t_opt:17.0,t_sig:6.0, lag:12,lagW:5, k:0.89,apiRef:42, forest:['311','312','313']},
-  herbsttrompete:  {label:'Herbsttrompete',  emoji:'⚫', dS:220,dE:325, t_opt:13.5,t_sig:5.0, lag:14,lagW:6, k:0.91,apiRef:40, forest:['311','313']},
+  herbsttrompete:  {label:'Herbsttrompete',  emoji:'⚫', dS:220,dE:325, t_opt:13.5,t_sig:6.0, lag:14,lagW:6, k:0.91,apiRef:40, forest:['311','313']},
   morchel:         {label:'Morchel',         emoji:'🍄', dS:74, dE:150, t_opt:12.0,t_sig:4.5, lag:10,lagW:5, k:0.90,apiRef:36, forest:['311','313','324']},
   parasol:         {label:'Parasol',          emoji:'⚪', dS:210,dE:315, t_opt:16.0,t_sig:6.0, lag:12,lagW:5, k:0.90,apiRef:40, forest:['311','312','313','324']},
   frostschneckling:{label:'Frostschneckling', emoji:'🟠', dS:274,dE:395, t_opt:4.0, t_sig:5.0, lag:12,lagW:6, k:0.92,apiRef:40, forest:['312','313']},
@@ -212,7 +212,7 @@ function computeAPI(rain,k){const a=new Array(rain.length);let p=0;for(let i=0;i
 // Verdunstung: Dampfdruckdefizit (kPa) aus Temperatur + rel. Feuchte
 const ESAT=T=>0.6108*Math.exp(17.27*T/(T+237.3));
 const VPD=(T,RH)=>Math.max(0,ESAT(T)*(1-RH/100));
-const KD_ADD=0.04, ETC=2.6, APIREF_F=0.8;   // Drainage, mm/(d*kPa), Skalierung
+const KD_ADD=0.06, ETC=2.6, APIREF_F=0.8;   // Drainage, mm/(d*kPa), Skalierung
 // Bodenfeuchte mit wetterabhängigem Verlust: warm+trocken zieht schneller runter
 function computeAPI_ET(rain,t,rh,kd){const a=new Array(rain.length);let p=0;
   for(let i=0;i<rain.length;i++){const et=Math.min(5,ETC*VPD(t[i]??15,rh[i]??80));
@@ -503,7 +503,7 @@ fetch(GEOJSON,{cache:'no-store'})
         '<p style="color:var(--muted);font-size:10px;margin-top:6px;max-width:220px;text-align:center">Der Datenlauf läuft (evtl. hinter dem Maskenbau). Wenn im AppDaemon-Log „[run] geschrieben“ steht, Seite neu laden.</p>';
       return;
     }
-    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v21';
+    if(m.ref_date) document.getElementById('gen').textContent='Stand: '+m.ref_date+' · '+d.features.length+' Zellen · v22';
     buildTabs(); draw(); if(state.fundeMode!=='off')applyFunde(); loadEl.classList.add('gone');
   })
   .catch(e=>{clearTimeout(killTimer);
