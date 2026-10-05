@@ -55,6 +55,10 @@ GUILDS = {
     "wiese_saprob": [      # Parasol (saprob, Wiese/Waldrand)
         "Agaricaceae", "Marasmius oreades",  # Schirmlinge/Champignons/Boviste
     ],
+    "holz_winter": [       # Austernseitling, Samtfussruebling (Holzbewohner, kalte Saison)
+        "Pleurotus", "Flammulina", "Auricularia", "Panellus",
+        "Sarcoscypha", "Exidia", "Tremella",
+    ],
 }
 
 
